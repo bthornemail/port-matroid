@@ -1,0 +1,16 @@
+Test suite golden: RUNNING...
+rejected (as expected): test/bad/dup-id.csnp -> ErrEntityIdsNotAscending
+rejected (as expected): test/bad/unsorted.csnp -> ErrEntityIdsNotAscending
+rejected (as expected): test/bad/invalid-utf8.csnp -> ErrInvalidUtf8
+rejected (as expected): test/bad/nan.csnp -> ErrFloatNaNOrInfinity
+rejected (as expected): test/bad/bad-hash.csnp -> ErrHashMismatch
+rejected (as expected): test/bad/bad-magic.csnp -> ErrInvalidMagic
+rejected (as expected): test/bad/bad-magic.cspt -> ErrInvalidMagic
+rejected (as expected): test/bad/bad-hash.cspt -> ErrHashMismatch
+rejected (as expected): test/bad/tick-range.cspt -> ErrTickRangeInvalid
+rejected (as expected): test/bad/entity-range.cspt -> ErrEntityRangeInvalid
+rejected (as expected): test/bad/entity-out-of-range.cspt -> ErrEntityOutOfRange
+rejected (as expected): test/bad/unsorted.cspt -> ErrEntityIdsNotAscending
+Golden vectors: OK
+Test suite golden: PASS
+Test suite logged to: /root/port-matroid/dist-newstyle/build/x86_64-linux/ghc-9.0.2/port-matroid-0.1.0.0/t/golden/test/port-matroid-0.1.0.0-golden.log

@@ -1,0 +1,505 @@
+You are absolutely right. Without a frozen binary law, everything else is philosophical speculation. The spec must come first, with zero ambiguity—code must follow the spec, not define it.
+
+Let me write the complete binary specification before writing another line of implementation code.
+
+---
+
+SNAPSHOT-FORMAT.md
+
+Version: 1.0.0
+
+Status: FROZEN (breaking changes require major version bump)
+
+---
+
+1. Philosophy
+
+A Canonical Snapshot is the sole authoritative representation of system state. Two snapshots are identical if and only if their canonical binary representations are byte-identical.
+
+This document defines two canonical formats:
+
+1. CSNP: Complete Snapshot (global state)
+2. CSPT: Canonical Section (partial/sharded state)
+
+All implementations MUST produce identical byte streams for identical state. No exceptions.
+
+---
+
+2. Common Conventions
+
+2.1 Byte Order
+
+· All integers: Little-endian (Intel x86/AMD64 native order)
+· Rationale: Majority deployment on little-endian hardware; explicit byte order eliminates ambiguity.
+
+2.2 String Encoding
+
+· UTF-8, normalized to NFC (Canonical Composition)
+· No BOM (Byte Order Mark)
+· Maximum length: 2³²-1 bytes (4GB practical limit)
+· Null termination: NOT used; length prefix only
+
+2.3 Alignment
+
+· No padding between fields
+· Structures are packed
+· Arrays are contiguous
+· Exception: Hash blocks (32 bytes) naturally aligned in practice but not required
+
+2.4 Hash Function
+
+· SHA-256 (NIST FIPS 180-4)
+· Preimage: Exact byte range specified per format
+· Output: 32 bytes, raw binary (not hex-encoded)
+
+---
+
+3. CSNP: Complete Snapshot Format
+
+3.1 Magic Identifier
+
+```
+Offset: 0
+Size:   4 bytes
+Value:  0x43 0x53 0x4E 0x50  ("CSNP" in ASCII)
+```
+
+3.2 Header
+
+```
+Offset: 4
+Size:   28 bytes
+Layout:
+┌────────────┬─────┬─────────────────────────────────────────────┐
+│ Field      │ Sz  │ Description                                 │
+├────────────┼─────┼─────────────────────────────────────────────┤
+│ version    │ 2   │ Major version (1)                           │
+│ subversion │ 2   │ Minor version (0)                           │
+│ flags      │ 4   │ Bit flags (see 3.2.1)                       │
+│ tick       │ 8   │ Current simulation tick (uint64)            │
+│ entities   │ 8   │ Number of entities (uint64)                 │
+│ reserved   │ 4   │ Must be 0x00000000                          │
+└────────────┴─────┴─────────────────────────────────────────────┘
+```
+
+3.2.1 Flags Field (bits 0-31)
+
+```
+Bit 0  (0x00000001): ENTITIES_SORTED    (must be 1 in canonical form)
+Bit 1  (0x00000002): CHECKSUM_VALID     (1 if hash verified)
+Bit 2  (0x00000004): COMPRESSED         (0 in v1.0)
+Bit 3  (0x00000008): DELTA_SNAPSHOT     (0 for full snapshots)
+Bits 4-31: Reserved (must be 0)
+```
+
+3.3 Entity Table
+
+```
+Offset: 32
+Size:   variable (entities × entity_record_size)
+
+Entity Record (per entity):
+┌────────────┬─────┬─────────────────────────────────────────────┐
+│ Field      │ Sz  │ Description                                 │
+├────────────┼─────┼─────────────────────────────────────────────┤
+│ id         │ 8   │ Entity ID (int64, signed)                   │
+│ type_len   │ 4   │ Entity type string length (uint32)          │
+│ type       │ var │ Entity type (UTF-8, NFC, no null term)      │
+│ data_len   │ 4   │ Component data length (uint32)              │
+│ data       │ var │ Component data (see 3.3.1)                  │
+└────────────┴─────┴─────────────────────────────────────────────┘
+```
+
+3.3.1 Component Data Encoding
+
+Component data is a canonical key-value map encoded as:
+
+```
+┌────────────┬─────┬─────────────────────────────────────────────┐
+│ Field      │ Sz  │ Description                                 │
+├────────────┼─────┼─────────────────────────────────────────────┤
+│ count      │ 4   │ Number of key-value pairs (uint32)          │
+│ pairs      │ var │ Repeated: key_len, key, value_type, value   │
+└────────────┴─────┴─────────────────────────────────────────────┘
+```
+
+Key constraints:
+
+· Keys sorted lexicographically by UTF-8 byte order
+· No duplicate keys
+· Maximum key length: 255 bytes
+· Keys must match regex: [a-zA-Z_][a-zA-Z0-9_]*
+
+Value types:
+
+```
+Type ID  Size      Description
+0x01     8 bytes   int64 (signed)
+0x02     8 bytes   uint64 (unsigned)
+0x03     4 bytes   float32 (IEEE 754)
+0x04     8 bytes   float64 (IEEE 754)
+0x05     variable  UTF-8 string (length-prefixed)
+0x06     1 byte    boolean (0=false, 1=true, other=invalid)
+0x07     0 bytes   null (no value bytes)
+0x08-0xFF: Reserved
+```
+
+3.4 Hash Block
+
+```
+Offset: 32 + entity_table_size
+Size:   32 bytes
+
+Content: SHA-256 hash of bytes [0..offset-1]
+         (everything before the hash block)
+```
+
+3.5 Complete Layout
+
+```
+0       +4      +28     +entity_table     +32
+┌──────┬───────┬─────────────────────────┬──────┐
+│ MAGIC│HEADER │   ENTITY TABLE          │ HASH │
+└──────┴───────┴─────────────────────────┴──────┘
+```
+
+Total size: 64 + entity_table_size bytes minimum.
+
+---
+
+4. CSPT: Canonical Section Format
+
+4.1 Magic Identifier
+
+```
+Offset: 0
+Size:   4 bytes
+Value:  0x43 0x53 0x50 0x54  ("CSPT" in ASCII)
+```
+
+4.2 Region Header
+
+```
+Offset: 4
+Size:   29 bytes
+Layout:
+┌────────────┬─────┬─────────────────────────────────────────────┐
+│ Field      │ Sz  │ Description                                 │
+├────────────┼─────┼─────────────────────────────────────────────┤
+│ shard      │ 4   │ Shard ID (uint32)                           │
+│ tick_start │ 8   │ Inclusive start tick (uint64)               │
+│ tick_end   │ 8   │ Exclusive end tick (uint64)                 │
+│ entity_min │ 8   │ Minimum entity ID (int64)                   │
+│ entity_max │ 8   │ Maximum entity ID (int64)                   │
+│ priority   │ 1   │ Priority tier (0-255)                       │
+└────────────┴─────┴─────────────────────────────────────────────┘
+```
+
+Constraints:
+
+· tick_start < tick_end
+· entity_min ≤ entity_max
+· priority ∈ [0, 255]
+· Region must be valid (non-empty subspace)
+
+4.3 Entity Subset
+
+```
+Offset: 33
+Size:   variable
+
+Format identical to CSNP Entity Table (section 3.3)
+with ADDITIONAL CONSTRAINT:
+All entity IDs must satisfy: entity_min ≤ id ≤ entity_max
+```
+
+4.4 Hash Block
+
+```
+Offset: 33 + entity_table_size
+Size:   32 bytes
+
+Content: SHA-256 hash of bytes [0..offset-1]
+         (magic + region header + entity table)
+```
+
+4.5 Complete Layout
+
+```
+0       +4      +29     +entity_table     +32
+┌──────┬───────┬─────────────────────────┬──────┐
+│ MAGIC│REGION │   ENTITY SUBSET         │ HASH │
+└──────┴───────┴─────────────────────────┴──────┘
+```
+
+Total size: 65 + entity_table_size bytes minimum.
+
+---
+
+5. Hash Law
+
+5.1 Preimage Definition
+
+For CSNP:
+
+```
+preimage = bytes[0 : total_size - 32]
+```
+
+For CSPT:
+
+```
+preimage = bytes[0 : total_size - 32]
+```
+
+5.2 Hash Computation
+
+```python
+def compute_canonical_hash(data: bytes) -> bytes:
+    """Return SHA-256 hash of canonical preimage."""
+    import hashlib
+    # SHA-256 with no extra transformations
+    return hashlib.sha256(data).digest()
+```
+
+5.3 Verification Rule
+
+A snapshot is valid if and only if:
+
+1. Magic bytes match expected value
+2. Hash block contains compute_canonical_hash(preimage)
+3. All structural constraints are satisfied
+4. Entity IDs are sorted ascending with no duplicates
+
+5.4 Cross-Platform Requirement
+
+Any two implementations reading the same logical state must produce:
+
+· Identical byte-for-byte canonical encoding
+· Identical SHA-256 hash
+· Identical validation result
+
+---
+
+6. Entity Canonical Ordering
+
+6.1 Sorting Rule
+
+Entities are sorted by entity ID ascending (signed 64-bit comparison).
+
+6.2 Duplicate Prevention
+
+Duplicate entity IDs are invalid. Implementations MUST reject snapshots with duplicate IDs.
+
+6.3 Stability Guarantee
+
+Given the same set of entities, all implementations MUST produce:
+
+1. Identical entity order in the table
+2. Identical byte encoding for each entity
+3. Identical overall table layout
+
+---
+
+7. Region Algebra
+
+7.1 Region Validity
+
+A region R = (shard, t0, t1, e0, e1, prio) is valid if:
+
+1. t0 < t1 (non-empty time interval)
+2. e0 ≤ e1 (non-empty entity range)
+3. prio ∈ [0, 255]
+
+7.2 Overlap Definition
+
+Two regions A and B overlap if:
+
+1. A.shard == B.shard
+2. A.priority == B.priority
+3. max(A.t0, B.t0) < min(A.t1, B.t1)
+4. max(A.e0, B.e0) ≤ min(A.e1, B.e1)
+
+The overlap region A ∩ B is:
+
+```
+shard = A.shard
+t0 = max(A.t0, B.t0)
+t1 = min(A.t1, B.t1)
+e0 = max(A.e0, B.e0)
+e1 = min(A.e1, B.e1)
+priority = A.priority
+```
+
+7.3 Containment
+
+Region A contains region B if:
+
+1. A.shard == B.shard
+2. A.priority == B.priority
+3. A.t0 ≤ B.t0 and B.t1 ≤ A.t1
+4. A.e0 ≤ B.e0 and B.e1 ≤ A.e1
+
+---
+
+8. Sheaf Axioms
+
+8.1 Section Agreement
+
+Two CSPT sections S₁ (region R₁) and S₂ (region R₂) agree on overlap if:
+
+1. They have identical bytes for all entities in R₁ ∩ R₂
+2. The entity ordering within the overlap is identical
+3. The hash of each entity's encoding is identical
+
+Formally:
+
+```
+agree(S₁, S₂) ⇔ 
+  ∀ entity e ∈ (R₁ ∩ R₂):
+    encode(S₁, e) = encode(S₂, e)
+```
+
+8.2 Gluing Theorem
+
+If a set of CSPT sections {Sᵢ} satisfies:
+
+1. Each Sᵢ is valid CSPT
+2. Pairwise agreement: ∀i,j: agree(Sᵢ, Sⱼ)
+3. Coverage: ∪ Rᵢ = R_target (covering target region)
+
+Then there exists a unique CSNP snapshot S such that:
+
+```
+∀i: restrict(S, Rᵢ) = Sᵢ
+```
+
+Where restrict produces the canonical CSPT encoding of S restricted to Rᵢ.
+
+8.3 Gluing Algorithm
+
+```
+function glue(sections: List[CSPT]) -> Either[Error, CSNP]:
+  1. Verify all sections are valid CSPT
+  2. Verify pairwise agreement (hash comparison on overlaps)
+  3. Merge entity tables (sorted union by ID)
+  4. Remove duplicates (should be identical bytes)
+  5. Construct CSNP header from minimal covering region
+  6. Compute canonical hash
+  7. Return CSNP(bytes)
+```
+
+---
+
+9. Versioning and Compatibility
+
+9.1 Version Header
+
+· Major version: Breaking changes (new magic, incompatible encoding)
+· Minor version: Backward-compatible extensions
+
+9.2 Migration Rule
+
+Implementations MAY support reading older versions.
+Implementations MUST produce current version when writing.
+
+9.3 Deprecation
+
+Features marked deprecated in version N MAY be removed in version N+2.
+
+---
+
+10. Security Considerations
+
+10.1 Hash Strength
+
+SHA-256 provides 128-bit collision resistance, sufficient for all envisioned use cases.
+
+10.2 Denial of Service
+
+Implementations MUST:
+
+· Validate sizes before allocation
+· Enforce maximum sizes (entity count, string length, total size)
+· Implement timeouts for hash verification
+
+10.3 Canonicalization Attacks
+
+Attackers MUST NOT be able to:
+
+· Produce two different encodings of the same logical state
+· Cause different implementations to compute different hashes
+· Bypass validation through malformed but technically valid encodings
+
+---
+
+11. Reference Test Vectors
+
+11.1 Empty Snapshot
+
+```
+CSNP header (32 bytes):
+  43 53 4E 50  CSNP magic
+  00 01        version 1.0
+  00 00 00 01  flags: ENTITIES_SORTED
+  00 00 00 00 00 00 00 00  tick 0
+  00 00 00 00 00 00 00 00  entity count 0
+  00 00 00 00              reserved
+
+Hash (32 bytes):
+  SHA-256 of header = e3b0c442... (empty input hash)
+```
+
+11.2 Single Entity Snapshot
+
+(See Appendix A for complete example)
+
+---
+
+12. Appendices
+
+Appendix A: Complete Example
+
+[Detailed example with byte-by-byte breakdown]
+
+Appendix B: Change Log
+
+· v1.0.0: Initial frozen specification
+
+Appendix C: Implementation Checklist
+
+[Checklist for verifying implementation correctness]
+
+---
+
+13. Compliance
+
+An implementation is compliant if:
+
+1. It passes all reference test vectors
+2. It rejects all invalid encodings (per spec)
+3. It produces identical hashes to reference implementation
+4. It satisfies all "MUST" requirements in this document
+
+---
+
+END OF SPECIFICATION
+
+---
+
+Now, before implementing, I need your verification on:
+
+1. Byte order: Little-endian for all integers ✓
+2. String normalization: NFC ✓
+3. Hash function: SHA-256 ✓
+4. Entity sorting: By ID ascending ✓
+5. Magic values: CSNP=0x43534E50, CSPT=0x43535054 ✓
+
+Once this spec is approved and frozen, I'll implement:
+
+1. Reference encoder/decoder in Haskell
+2. Test vectors with known hashes
+3. Cross-language validation suite
+4. Then build cube/sheaf layers on top
+
+The binary law comes first. Everything else follows.

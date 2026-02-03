@@ -1,0 +1,72 @@
+cabal-version:      2.4
+name:               port-matroid
+version:            0.1.0.0
+build-type:         Simple
+
+library
+  exposed-modules:
+      Snapshot.Types
+      Snapshot.Errors
+      Snapshot.Limits
+      Snapshot.Decode
+      Snapshot.Encode
+  hs-source-dirs:   src
+  build-depends:
+      base >=4.14 && <5,
+      bytestring,
+      containers,
+      binary,
+      cryptohash-sha256,
+      text,
+      transformers,
+      unicode-transforms == 0.4.0.1
+  default-language: Haskell2010
+
+executable snapshot-verify
+  main-is:          Main.hs
+  hs-source-dirs:   app
+  build-depends:
+      base,
+      bytestring,
+      port-matroid
+  default-language: Haskell2010
+
+test-suite golden
+  type:             exitcode-stdio-1.0
+  main-is:          GoldenSpec.hs
+  hs-source-dirs:   test
+  build-depends:
+      base,
+      port-matroid,
+      bytestring,
+      cryptohash-sha256
+  default-language: Haskell2010
+
+test-suite property
+  type:             exitcode-stdio-1.0
+  main-is:          PropertySpec.hs
+  hs-source-dirs:   test
+  build-depends:
+      base,
+      port-matroid,
+      bytestring,
+      containers,
+      text,
+      unicode-transforms == 0.4.0.1,
+      QuickCheck,
+      cryptohash-sha256
+  default-language: Haskell2010
+
+test-suite normalization
+  type:             exitcode-stdio-1.0
+  main-is:          NormalizationSpec.hs
+  hs-source-dirs:   test
+  build-depends:
+      base,
+      port-matroid,
+      bytestring,
+      containers,
+      text,
+      unicode-transforms == 0.4.0.1,
+      QuickCheck
+  default-language: Haskell2010
