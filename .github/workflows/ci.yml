@@ -1,0 +1,47 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Haskell
+        uses: haskell-actions/setup@v2
+        with:
+          ghc-version: "9.0.2"
+          cabal-version: "3.10"
+      - name: Cache cabal
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cabal/store
+            port-matroid/dist-newstyle
+          key: cabal-${{ runner.os }}-${{ hashFiles('port-matroid/port-matroid.cabal') }}
+          restore-keys: |
+            cabal-${{ runner.os }}-
+      - name: Build
+        run: scripts/ci/build.sh
+      - name: Unit tests
+        run: scripts/ci/test.sh
+      - name: Storage fuzz (fast)
+        env:
+          STORAGE_FUZZ_MAX: "200"
+          STORAGE_FUZZ_MAX_SMALL: "100"
+        run: scripts/ci/fuzz_storage_fast.sh
+      - name: Upload artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: failure-artifacts
+          path: |
+            port-matroid/dist-newstyle/cache/plan.json
+            port-matroid/**/fuzz-trace*.jsonl
+            port-matroid/**/fuzz-seed*.txt
+            port-matroid/**/test-output*.log

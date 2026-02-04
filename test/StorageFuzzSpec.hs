@@ -20,6 +20,7 @@ import System.Directory
 import System.FilePath ((</>))
 import System.IO.Unsafe (unsafePerformIO)
 import System.Posix.Process (getProcessID)
+import System.Environment (lookupEnv)
 import Test.QuickCheck
 import Test.QuickCheck.Monadic (monadicIO, run, assert)
 
@@ -273,8 +274,17 @@ prop_crash_rotation_manifest_switch = monadicIO $ do
 
 main :: IO ()
 main = do
-  quickCheckWith stdArgs { maxSuccess = 200 } prop_clean_replay
-  quickCheckWith stdArgs { maxSuccess = 200 } prop_corruption_fail_closed
-  quickCheckWith stdArgs { maxSuccess = 200 } prop_truncate_allows_trailing
-  quickCheckWith stdArgs { maxSuccess = 100 } prop_manifest_corruption_fallback
-  quickCheckWith stdArgs { maxSuccess = 100 } prop_crash_rotation_manifest_switch
+  maxS <- readEnvInt "STORAGE_FUZZ_MAX" 200
+  maxSmall <- readEnvInt "STORAGE_FUZZ_MAX_SMALL" 100
+  quickCheckWith stdArgs { maxSuccess = maxS } prop_clean_replay
+  quickCheckWith stdArgs { maxSuccess = maxS } prop_corruption_fail_closed
+  quickCheckWith stdArgs { maxSuccess = maxS } prop_truncate_allows_trailing
+  quickCheckWith stdArgs { maxSuccess = maxSmall } prop_manifest_corruption_fallback
+  quickCheckWith stdArgs { maxSuccess = maxSmall } prop_crash_rotation_manifest_switch
+
+readEnvInt :: String -> Int -> IO Int
+readEnvInt key def = do
+  v <- lookupEnv key
+  case v >>= readMaybe of
+    Just n | n > 0 -> pure n
+    _ -> pure def

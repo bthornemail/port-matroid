@@ -1,0 +1,43 @@
+name: nightly-fuzz
+
+on:
+  schedule:
+    - cron: "0 9 * * *"
+  workflow_dispatch:
+
+jobs:
+  fuzz:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Haskell
+        uses: haskell-actions/setup@v2
+        with:
+          ghc-version: "9.0.2"
+          cabal-version: "3.10"
+      - name: Cache cabal
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cabal/store
+            port-matroid/dist-newstyle
+          key: cabal-nightly-${{ runner.os }}-${{ hashFiles('port-matroid/port-matroid.cabal') }}
+          restore-keys: |
+            cabal-nightly-${{ runner.os }}-
+      - name: Build
+        run: scripts/ci/build.sh
+      - name: Storage fuzz (nightly)
+        env:
+          STORAGE_FUZZ_MAX: "10000"
+          STORAGE_FUZZ_MAX_SMALL: "2000"
+        run: scripts/ci/fuzz_storage_nightly.sh
+      - name: Upload artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-fuzz-failure
+          path: |
+            port-matroid/**/fuzz-trace*.jsonl
+            port-matroid/**/fuzz-seed*.txt
+            port-matroid/**/test-output*.log
