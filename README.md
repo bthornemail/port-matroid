@@ -52,6 +52,9 @@ An implementation is compliant if it passes all of the following suites:
 13. Convergence simulator
 - `cabal test convergence-sim`
 
+14. Network fuzz
+- `cabal test network-fuzz`
+
 Frozen Consensus Specifications (v1)
 
 The following documents define consensus-critical behavior.

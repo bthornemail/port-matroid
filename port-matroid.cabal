@@ -35,6 +35,8 @@ library
       Runtime.Node
       Runtime.Server
       Runtime.Control
+      Runtime.Net.Gossip.Types
+      Runtime.Net.Gossip
       Snapshot.Routing.Types
       Snapshot.Routing.Encode
       Snapshot.Routing.Decode
@@ -361,6 +363,21 @@ test-suite convergence-sim
 test-suite storage-fuzz
   type:             exitcode-stdio-1.0
   main-is:          StorageFuzzSpec.hs
+  hs-source-dirs:   test
+  build-depends:
+      base,
+      port-matroid,
+      bytestring,
+      directory,
+      filepath,
+      QuickCheck,
+      binary,
+      unix
+  default-language: Haskell2010
+
+test-suite network-fuzz
+  type:             exitcode-stdio-1.0
+  main-is:          NetworkFuzzSpec.hs
   hs-source-dirs:   test
   build-depends:
       base,

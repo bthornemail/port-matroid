@@ -20,6 +20,7 @@ module Runtime.Store
   , verifyWalHeader
   , walVersion
   , replayWalWith
+  , crc32
   ) where
 
 import Snapshot.Decode (decodeSnapshot)

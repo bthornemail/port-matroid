@@ -32,6 +32,11 @@ jobs:
           STORAGE_FUZZ_MAX: "10000"
           STORAGE_FUZZ_MAX_SMALL: "2000"
         run: scripts/ci/fuzz_storage_nightly.sh
+      - name: Network fuzz (nightly)
+        env:
+          NETWORK_FUZZ_MAX: "5000"
+          NETWORK_FUZZ_STEPS: "500"
+        run: scripts/ci/fuzz_network_nightly.sh
       - name: Upload artifacts on failure
         if: failure()
         uses: actions/upload-artifact@v4
