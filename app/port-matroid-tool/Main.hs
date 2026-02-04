@@ -4,6 +4,7 @@ import Snapshot.Decode (decodeSnapshot)
 import Snapshot.Scheduler.Decode (decodeWorkSet)
 import Snapshot.Routing.Decode (decodeRoutingContext)
 import Snapshot.Scheduler.Network.Decode (decodeMessage)
+import qualified Runtime.Store
 
 import qualified Data.ByteString as BS
 import System.Environment (getArgs)
@@ -15,6 +16,7 @@ main = do
   args <- getArgs
   case args of
     ["validate", path] -> validate path
+    ["audit", dir] -> audit dir
     _ -> usage >> exitFailure
 
 validate :: FilePath -> IO ()
@@ -40,7 +42,18 @@ validate path = do
     _ -> die "unknown extension"
 
 usage :: IO ()
-usage = putStrLn "usage: port-matroid-tool validate <file>"
+usage = putStrLn "usage: port-matroid-tool validate <file> | audit <data-dir>"
 
 die :: String -> IO ()
 die msg = putStrLn msg >> exitFailure
+
+audit :: FilePath -> IO ()
+audit dir = do
+  snap <- Runtime.Store.loadSnapshot dir
+  case snap of
+    Left err -> die ("snapshot error: " ++ err)
+    Right s -> do
+      res <- Runtime.Store.replayWal dir s
+      case res of
+        Left err -> die ("wal replay error: " ++ err)
+        Right _ -> putStrLn "ok"
