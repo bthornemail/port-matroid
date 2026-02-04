@@ -25,6 +25,8 @@ An implementation is compliant if it passes all of the following suites:
 
 5. Cube routing law
 - `cabal test routing-golden`
+- `cabal test routing-error-golden`
+- `cabal test routing-bad`
 
 Frozen Consensus Specifications (v1)
 
