@@ -43,14 +43,16 @@ loop cfg stVar shutdownFlag = do
   if stop
     then gracefulShutdown cfg stVar
     else do
-      _ <- modifyMVar stVar $ \st -> do
-        res <- tickOnce st
-        case res of
-          Left err -> do
-            logMsg cfg Error ("tick failed: " ++ err)
-            exitFailure
-          Right st' -> pure (st', ())
-      loop cfg stVar shutdownFlag
+      res <- modifyMVar stVar $ \st -> do
+        r <- tickOnce st
+        case r of
+          Left err -> pure (st, Left err)
+          Right st' -> pure (st', Right ())
+      case res of
+        Left err -> do
+          logMsg cfg Error ("tick failed: " ++ err)
+          gracefulShutdown cfg stVar
+        Right () -> loop cfg stVar shutdownFlag
 
 signalShutdown :: MVar Bool -> IO ()
 signalShutdown flag = do

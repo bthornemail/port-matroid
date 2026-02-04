@@ -22,7 +22,7 @@ import Data.Binary.Put
 import System.Directory (createDirectoryIfMissing, doesFileExist, renameFile, removeFile)
 import System.FilePath ((</>), takeDirectory)
 import Control.Monad (foldM)
-import Control.Exception (try, SomeException)
+import Control.Exception (try, SomeException, bracket)
 import System.Posix.IO (openFd, defaultFileFlags, OpenMode(..), closeFd, fsync)
 import System.Posix.Process (getProcessID)
 
@@ -124,6 +124,7 @@ atomicWriteFile final bytes = do
     BS.writeFile tmp bytes
     _ <- fsyncPath tmp
     renameFile tmp final
+    fsyncDir (takeDirectory final)
   case r of
     Left (e :: SomeException) -> do
       _ <- try (removeFile tmp) :: IO (Either SomeException ())
@@ -131,7 +132,9 @@ atomicWriteFile final bytes = do
     Right () -> pure (Right ())
 
 fsyncPath :: FilePath -> IO ()
-fsyncPath path = do
-  fd <- openFd path ReadOnly Nothing defaultFileFlags
-  _ <- fsync fd
-  closeFd fd
+fsyncPath path =
+  bracket (openFd path ReadOnly Nothing defaultFileFlags) closeFd fsync
+
+fsyncDir :: FilePath -> IO ()
+fsyncDir dir =
+  bracket (openFd dir ReadOnly Nothing defaultFileFlags) closeFd fsync

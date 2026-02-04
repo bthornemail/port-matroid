@@ -60,7 +60,7 @@ runControl cfg stVar = do
         ["dump-snapshot"] -> do
           case encodeSnapshotBytes (nodeSnapshot st) of
             Left err -> pure ("error " ++ err ++ "\n")
-            Right bytes -> pure (C8.unpack bytes ++ "\n")
+            Right bytes -> pure (C8.unpack bytes)
         _ -> pure "error unknown\n"
 
 encodeSnapshotBytes :: Snapshot -> Either String BS.ByteString

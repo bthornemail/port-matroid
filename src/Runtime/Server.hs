@@ -10,6 +10,7 @@ import Runtime.Node
 import Control.Concurrent (forkIO)
 import Control.Concurrent.MVar
 import Control.Concurrent.QSem
+import Control.Exception (finally)
 import qualified Data.ByteString as BS
 import Network.Socket
 import Network.Socket.ByteString (sendAll)
@@ -36,7 +37,8 @@ runServer cfg stVar = do
 
     acceptLoop sem sock = do
       (conn, _peer) <- accept sock
-      _ <- forkIO (withQSem sem (handleConn conn))
+      waitQSem sem
+      _ <- forkIO (handleConn conn `finally` signalQSem sem)
       acceptLoop sem sock
 
     handleConn conn = do
