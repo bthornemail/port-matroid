@@ -49,6 +49,10 @@ die msg = putStrLn msg >> exitFailure
 
 audit :: FilePath -> IO ()
 audit dir = do
+  m <- Runtime.Store.readManifest dir
+  gen <- case m of
+    Right mf -> pure (Just (Runtime.Store.manifestGeneration mf))
+    Left _ -> pure Nothing
   snap <- Runtime.Store.loadSnapshot dir
   case snap of
     Left err -> die ("snapshot error: " ++ err)
@@ -56,4 +60,11 @@ audit dir = do
       res <- Runtime.Store.replayWal dir s
       case res of
         Left err -> die ("wal replay error: " ++ err)
-        Right _ -> putStrLn "ok"
+        Right _ -> do
+          cnt <- Runtime.Store.walEntryCount dir
+          case cnt of
+            Left err -> die ("wal count error: " ++ err)
+            Right n ->
+              case gen of
+                Just g -> putStrLn ("ok gen=" ++ show g ++ " wal_entries=" ++ show n)
+                Nothing -> putStrLn ("ok wal_entries=" ++ show n)

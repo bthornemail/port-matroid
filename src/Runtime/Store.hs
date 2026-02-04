@@ -15,6 +15,7 @@ module Runtime.Store
   , currentSnapshotPath
   , currentWalPath
   , manifestGeneration
+  , walEntryCount
   ) where
 
 import Snapshot.Decode (decodeSnapshot)
@@ -32,6 +33,7 @@ import System.FilePath ((</>), takeDirectory)
 import Control.Monad (foldM)
 import Control.Exception (try, SomeException, bracket)
 import System.IO.Error (catchIOError)
+import Data.Char (isSpace)
 import System.Posix.IO (openFd, defaultFileFlags, OpenMode(..), closeFd, fsync)
 import System.Posix.Process (getProcessID)
 import Data.Bits (xor, (.&.), shiftR)
@@ -64,7 +66,7 @@ readManifest dir = do
     then pure (Left "manifest missing")
     else do
       bytes <- BS.readFile path
-      let ls = lines (map (toEnum . fromEnum) (BS.unpack bytes))
+      let ls = map stripLine (lines (map (toEnum . fromEnum) (BS.unpack bytes)))
       case parseLines ls of
         Left err -> pure (Left err)
         Right m -> pure (Right m)
@@ -77,7 +79,15 @@ readManifest dir = do
             Nothing -> Left "manifest bad gen"
         _ -> Left "manifest incomplete"
       where
-        kvs = [ let (k, v') = break (== '=') l in (k, drop 1 v') | l <- ls, '=' `elem` l ]
+        kvs =
+          [ let (k, v') = break (== '=') l in (k, drop 1 v')
+          | l <- ls
+          , not (null l)
+          , head l /= '#'
+          , '=' `elem` l
+          ]
+    stripLine = trim . dropWhile isSpace
+    trim = reverse . dropWhile isSpace . reverse . dropWhile (== '\r')
 
 writeManifest :: FilePath -> Manifest -> IO (Either String ())
 writeManifest dir mf = do
@@ -122,15 +132,18 @@ appendWal :: FilePath -> BS.ByteString -> IO (Either String ())
 appendWal dir payload = do
   createDirectoryIfMissing True (dir </> "wal")
   path <- currentWalPath dir
-  ensureWalHeader path
-  let crc = crc32 payload
-  let entry = BL.toStrict $ runPut $ do
-        putWord32le (fromIntegral (BS.length payload))
-        putWord32le crc
-        putByteString payload
-  BS.appendFile path entry
-  _ <- fsyncPath path
-  pure (Right ())
+  h <- ensureWalHeader path
+  case h of
+    Left err -> pure (Left err)
+    Right () -> do
+      let crc = crc32 payload
+      let entry = BL.toStrict $ runPut $ do
+            putWord32le (fromIntegral (BS.length payload))
+            putWord32le crc
+            putByteString payload
+      BS.appendFile path entry
+      _ <- fsyncPath path
+      pure (Right ())
 
 resetWal :: FilePath -> IO (Either String ())
 resetWal dir = do
@@ -169,13 +182,17 @@ replayWal dir snap = do
   if not exists
     then pure (Right snap)
     else do
-      bytes <- BS.readFile path
-      case runGetOrFail getEntries (BL.fromStrict bytes) of
-        Left (_, _, err) -> pure (Left ("wal parse error: " ++ err))
-        Right (_, _, entries) ->
-          case foldM applyOne snap entries of
-            Left err -> pure (Left err)
-            Right res -> pure (Right res)
+      h <- ensureWalHeader path
+      case h of
+        Left err -> pure (Left err)
+        Right () -> do
+          bytes <- BS.readFile path
+          case runGetOrFail getEntries (BL.fromStrict bytes) of
+            Left (_, _, err) -> pure (Left ("wal parse error: " ++ err))
+            Right (_, _, entries) ->
+              case foldM applyOne snap entries of
+                Left err -> pure (Left err)
+                Right res -> pure (Right res)
   where
     getEntries = do
       header <- getByteString (BS.length walHeader)
@@ -220,7 +237,7 @@ atomicWriteFile final bytes = do
 
 fsyncPath :: FilePath -> IO ()
 fsyncPath path =
-  bracket (openFd path ReadOnly Nothing defaultFileFlags) closeFd fsync
+  bracket (openFd path ReadWrite Nothing defaultFileFlags) closeFd fsync
 
 fsyncDir :: FilePath -> IO ()
 fsyncDir dir =
@@ -274,16 +291,49 @@ walHeader =
       ver = BL.toStrict (runPut (putWord16le 1))
   in magic <> ver
 
-ensureWalHeader :: FilePath -> IO ()
+ensureWalHeader :: FilePath -> IO (Either String ())
 ensureWalHeader path = do
   exists <- doesFileExist path
   if not exists
-    then BS.writeFile path walHeader
+    then BS.writeFile path walHeader >> pure (Right ())
     else do
       sz <- getFileSize path
-      if sz == 0
-        then BS.writeFile path walHeader
-        else pure ()
+      if sz < fromIntegral (BS.length walHeader)
+        then pure (Left "wal header missing")
+        else do
+          header <- BS.readFile path
+          if BS.take (BS.length walHeader) header /= walHeader
+            then pure (Left "wal header mismatch")
+            else pure (Right ())
+
+walEntryCount :: FilePath -> IO (Either String Int)
+walEntryCount dir = do
+  path <- currentWalPath dir
+  exists <- doesFileExist path
+  if not exists
+    then pure (Right 0)
+    else do
+      h <- ensureWalHeader path
+      case h of
+        Left err -> pure (Left err)
+        Right () -> do
+          bytes <- BS.readFile path
+          case runGetOrFail countEntries (BL.fromStrict bytes) of
+            Left (_, _, err) -> pure (Left ("wal parse error: " ++ err))
+            Right (_, _, n) -> pure (Right n)
+  where
+    countEntries = do
+      _ <- getByteString (BS.length walHeader)
+      go 0
+    go n = do
+      done <- isEmpty
+      if done
+        then pure n
+        else do
+          len <- getWord32le
+          _ <- getWord32le
+          _ <- getByteString (fromIntegral len)
+          go (n + 1)
 
 crc32 :: BS.ByteString -> Word32
 crc32 bs = BS.foldl' step 0xFFFFFFFF bs `xor` 0xFFFFFFFF
