@@ -6,13 +6,11 @@ import Snapshot.Types (Snapshot)
 import Snapshot.Scheduler.Decode (decodeWorkSet)
 import Snapshot.Scheduler.Core (scheduleStep)
 import Snapshot.Scheduler.Types
+import Snapshot.Scheduler.Union (unionWorkSets)
 import Snapshot.Universe.Core (decodeStream, applyInstructions)
 import Snapshot.Universe.Types (AuthorityMask(..), Result(..))
 
 import qualified Data.ByteString as BS
-import qualified Data.List as List
-import qualified Data.Map.Strict as Map
-import Data.Word (Word32, Word64)
 
 main :: IO ()
 main = do
@@ -33,11 +31,11 @@ main = do
     Left err -> error ("decode peer-b workset failed: " ++ show err)
     Right w -> pure w
 
-  unioned <- case canonicalUnion wa wb of
-    Left msg -> error ("union failed: " ++ msg)
+  unioned <- case unionWorkSets wa wb of
+    Left err -> error ("union failed: " ++ show err)
     Right w -> pure w
 
-  (batchBytes, _) <- case scheduleStep defaultParams defaultState unioned of
+  (batchBytes, _) <- case scheduleStep defaultParams defaultState (unCanonicalWorkSet unioned) of
     Left err -> error ("scheduleStep failed: " ++ show err)
     Right v -> pure v
 
@@ -72,7 +70,7 @@ runCollisionCase = do
   wb <- case decodeWorkSet wbBytes of
     Left err -> error ("decode collision-b failed: " ++ show err)
     Right w -> pure w
-  case canonicalUnion wa wb of
+  case unionWorkSets wa wb of
     Left _ -> pure ()
     Right _ -> error "collision union unexpectedly succeeded"
 
@@ -86,10 +84,10 @@ runDuplicateOkCase = do
   wb <- case decodeWorkSet wbBytes of
     Left err -> error ("decode dupe-ok-b failed: " ++ show err)
     Right w -> pure w
-  case canonicalUnion wa wb of
-    Left err -> error ("duplicate ok union failed: " ++ err)
+  case unionWorkSets wa wb of
+    Left err -> error ("duplicate ok union failed: " ++ show err)
     Right ws ->
-      if length ws /= 1
+      if length (unCanonicalWorkSet ws) /= 1
         then error "duplicate ok union wrong size"
         else pure ()
 
@@ -103,10 +101,10 @@ runMultiShardCase batchExpected beforeSnap afterBytes = do
   wb <- case decodeWorkSet wbBytes of
     Left err -> error ("decode multishard-b failed: " ++ show err)
     Right w -> pure w
-  unioned <- case canonicalUnion wa wb of
-    Left msg -> error ("multishard union failed: " ++ msg)
+  unioned <- case unionWorkSets wa wb of
+    Left err -> error ("multishard union failed: " ++ show err)
     Right w -> pure w
-  (batchBytes, _) <- case scheduleStep defaultParams defaultState unioned of
+  (batchBytes, _) <- case scheduleStep defaultParams defaultState (unCanonicalWorkSet unioned) of
     Left err -> error ("multishard scheduleStep failed: " ++ show err)
     Right v -> pure v
   if batchBytes /= batchExpected
@@ -125,37 +123,3 @@ runMultiShardCase batchExpected beforeSnap afterBytes = do
               if bytes /= afterBytes
                 then error "multishard after snapshot mismatch"
                 else pure ()
-
-canonicalUnion :: [WorkItem] -> [WorkItem] -> Either String [WorkItem]
-canonicalUnion a b =
-  let combined = a ++ b
-      mpOrErr = foldl insert (Right Map.empty) combined
-  in case mpOrErr of
-       Left msg -> Left msg
-       Right mp -> Right (List.sortBy compareWorkItem (Map.elems mp))
-  where
-    insert acc w =
-      case acc of
-        Left msg -> Left msg
-        Right m ->
-          case Map.lookup (workId w) m of
-            Nothing -> Right (Map.insert (workId w) w m)
-            Just w' ->
-              if w' == w
-                then Right m
-                else Left "duplicate work_id with different bytes"
-
-compareWorkItem :: WorkItem -> WorkItem -> Ordering
-compareWorkItem x y = compare (workKey x, workId x) (workKey y, workId y)
-
-workKey :: WorkItem -> (Int, Word32, Word64, Word32, BS.ByteString)
-workKey w =
-  ( fromIntegral (cellTier (workCell w))
-  , negate32 (workPriority w)
-  , workDeadline w
-  , workCost w
-  , workId w
-  )
-
-negate32 :: Word32 -> Word32
-negate32 w = maxBound - w

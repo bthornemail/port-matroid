@@ -43,6 +43,12 @@ An implementation is compliant if it passes all of the following suites:
 10. Network bad corpus
 - `cabal test network-bad`
 
+11. Network state machine
+- `cabal test network-state`
+
+12. Union laws
+- `cabal test union-law`
+
 Frozen Consensus Specifications (v1)
 
 The following documents define consensus-critical behavior.

@@ -1,6 +1,11 @@
 module Snapshot.Scheduler.Types
   ( Cell(..)
   , WorkItem(..)
+  , CanonicalWorkSet(..)
+  , canonicalizeWorkSet
+  , unCanonicalWorkSet
+  , workKey
+  , compareWorkItem
   , SchedulerParams(..)
   , SchedulerState(..)
   , ScheduleError(..)
@@ -11,6 +16,7 @@ module Snapshot.Scheduler.Types
 import Data.ByteString (ByteString)
 import Data.Int (Int64)
 import Data.Word (Word32, Word64, Word8)
+import qualified Data.List as List
 
 data Cell = Cell
   { cellShard :: !Word32
@@ -30,6 +36,9 @@ data WorkItem = WorkItem
   , workCost :: !Word32
   , workInstrStream :: !ByteString
   }
+  deriving (Eq, Show)
+
+newtype CanonicalWorkSet = CanonicalWorkSet [WorkItem]
   deriving (Eq, Show)
 
 data SchedulerParams = SchedulerParams
@@ -62,3 +71,24 @@ defaultParams = SchedulerParams
 
 defaultState :: SchedulerState
 defaultState = SchedulerState { cursorCell = Nothing }
+
+workKey :: WorkItem -> (Word8, Word32, Word64, Word32, ByteString)
+workKey w =
+  ( cellTier (workCell w)
+  , negate32 (workPriority w)
+  , workDeadline w
+  , workCost w
+  , workId w
+  )
+
+compareWorkItem :: WorkItem -> WorkItem -> Ordering
+compareWorkItem a b = compare (workKey a, workId a) (workKey b, workId b)
+
+canonicalizeWorkSet :: [WorkItem] -> CanonicalWorkSet
+canonicalizeWorkSet = CanonicalWorkSet . List.sortBy compareWorkItem
+
+unCanonicalWorkSet :: CanonicalWorkSet -> [WorkItem]
+unCanonicalWorkSet (CanonicalWorkSet ws) = ws
+
+negate32 :: Word32 -> Word32
+negate32 w = maxBound - w

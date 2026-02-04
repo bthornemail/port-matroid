@@ -16,8 +16,8 @@ import Data.Word (Word32, Word64, Word8)
 
 scheduleStep :: SchedulerParams -> SchedulerState -> [WorkItem] -> Either ScheduleError (BS.ByteString, SchedulerState)
 scheduleStep params state items = do
-  let canon = canonicalWorkSet items
-  validated <- validateWorkSet canon
+  let canon = canonicalizeWorkSet items
+  validated <- validateWorkSet (unCanonicalWorkSet canon)
   let grouped = groupByCell validated
   let cells = rotateCells (cursorCell state) (Map.keys grouped)
   let queues = Map.map sortQueue grouped
@@ -29,11 +29,6 @@ scheduleStep params state items = do
         Just c -> Just c
   let nextState = SchedulerState { cursorCell = nextCursor }
   return (batchBytes, nextState)
-
-canonicalWorkSet :: [WorkItem] -> [WorkItem]
-canonicalWorkSet = List.sortBy compareWorkItem
-  where
-    compareWorkItem a b = compare (workKey a, workId a) (workKey b, workId b)
 
 mapEncode :: Either a BS.ByteString -> Either ScheduleError BS.ByteString
 mapEncode (Left _) = Left SchErrInternal
@@ -47,18 +42,6 @@ sortQueue :: [(WorkItem, [Int64])] -> [(WorkItem, [Int64])]
 sortQueue = List.sortBy compareWork
   where
     compareWork (a, _) (b, _) = compare (workKey a) (workKey b)
-
-workKey :: WorkItem -> (Word8, Word32, Word64, Word32, BS.ByteString)
-workKey w =
-  ( cellTier (workCell w)
-  , negate32 (workPriority w)
-  , workDeadline w
-  , workCost w
-  , workId w
-  )
-
-negate32 :: Word32 -> Word32
-negate32 w = maxBound - w
 
 rotateCells :: Maybe Cell -> [Cell] -> [Cell]
 rotateCells _ [] = []
@@ -129,9 +112,6 @@ conflicts touched = any (`Set.member` touched)
 
 addTouches :: Set.Set Int64 -> [Int64] -> Set.Set Int64
 addTouches = List.foldl' (flip Set.insert)
-
-cursorFromAcc :: [Cell] -> [Instruction] -> Maybe Cell
-cursorFromAcc _ _ = Nothing
 
 addCost :: Word32 -> Word32 -> Either () Word32
 addCost a b =

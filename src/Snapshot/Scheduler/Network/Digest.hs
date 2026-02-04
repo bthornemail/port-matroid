@@ -1,5 +1,7 @@
 module Snapshot.Scheduler.Network.Digest
-  ( buildWorkDigestPayload
+  ( CanonicalDigest(..)
+  , digestEntries
+  , buildWorkDigestPayload
   , decodeWorkDigestPayload
   ) where
 
@@ -25,16 +27,24 @@ cmpItem (c1, w1) (c2, w2) =
     EQ -> compare w1 w2
     o -> o
 
-buildWorkDigestPayload :: Word32 -> [WorkItem] -> Either NetError ByteString
+newtype CanonicalDigest = CanonicalDigest [(Cell, ByteString)]
+  deriving (Eq, Show)
+
+digestEntries :: CanonicalDigest -> [(Cell, ByteString)]
+digestEntries (CanonicalDigest xs) = xs
+
+buildWorkDigestPayload :: Word32 -> [WorkItem] -> Either NetError (CanonicalDigest, ByteString)
 buildWorkDigestPayload shard items = do
   let pairs = [ (workCell w, workId w) | w <- items, cellShard (workCell w) == shard ]
   let canon = sortBy cmpItem pairs
   if any (\(_, wid) -> BS.length wid /= 32) canon
     then Left NetErrMalformed
-    else Right $ BL.toStrict $ runPut $ do
-      putWord32le shard
-      putWord32le (fromIntegral (length canon))
-      mapM_ putOne canon
+    else
+      let payload = BL.toStrict $ runPut $ do
+            putWord32le shard
+            putWord32le (fromIntegral (length canon))
+            mapM_ putOne canon
+      in Right (CanonicalDigest canon, payload)
   where
     putOne (c, wid) = do
       putByteString wid
@@ -46,7 +56,7 @@ buildWorkDigestPayload shard items = do
       putInt64le e1
       putWord8 tier
 
-decodeWorkDigestPayload :: ByteString -> Either NetError (Word32, [(Cell, ByteString)])
+decodeWorkDigestPayload :: ByteString -> Either NetError (Word32, CanonicalDigest)
 decodeWorkDigestPayload bs =
   case runGetOrFail getAll (BL.fromStrict bs) of
     Left _ -> Left NetErrMalformed
@@ -70,5 +80,5 @@ decodeWorkDigestPayload bs =
     validate (shard, xs) =
       let canon = sortBy cmpItem xs
       in if canon == xs
-           then Right (shard, xs)
+           then Right (shard, CanonicalDigest xs)
            else Left NetErrNonCanonical
