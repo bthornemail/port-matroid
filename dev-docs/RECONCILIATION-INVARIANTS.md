@@ -81,6 +81,38 @@ Formally:
 
 ---
 
+2.1 Reconcile Error Model (v1 Draft)
+
+Reconcile errors are part of consensus and MUST be deterministic.
+
+Error constructors:
+
+ErrOverlapMismatch = 0x0001
+ErrNonCovering     = 0x0002
+ErrOutOfRange      = 0x0003
+ErrIncompatibleRegion = 0x0004
+ErrInternalInvariant  = 0x0005
+
+Error priority order:
+
+1. ErrIncompatibleRegion
+2. ErrOutOfRange
+3. ErrOverlapMismatch
+4. ErrNonCovering
+5. ErrInternalInvariant
+
+For any input, the error is uniquely determined by this order.
+
+---
+
+2.2 Reconcile Error Wire Format (v1)
+
+The canonical wire format for reconcile errors is a 16-bit little-endian code.
+Only the code is consensus-critical. Any payload (IDs, regions) is diagnostic
+only and MUST NOT affect consensus.
+
+---
+
 3. Derived Invariants (strongly recommended)
 
 INV-7 Projection to Canonical Space
@@ -140,9 +172,7 @@ Formally:
 
 5. Notes on Error Modeling
 
-The reconciliation error type is not defined in this repo yet. When it is:
-- Introduce explicit error constructors for overlap mismatches and coverage gaps.
-- Ensure errors are stable and deterministic (for use in distributed protocols).
+ReconcileError is frozen in section 2.1 for v1.
 
 ---
 

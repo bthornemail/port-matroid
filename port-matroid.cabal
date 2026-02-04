@@ -10,6 +10,10 @@ library
       Snapshot.Limits
       Snapshot.Decode
       Snapshot.Encode
+      Snapshot.Reconcile.Types
+      Snapshot.Reconcile.Core
+      Snapshot.Universe.Types
+      Snapshot.Universe.Core
   hs-source-dirs:   src
   build-depends:
       base >=4.14 && <5,
@@ -69,4 +73,78 @@ test-suite normalization
       text,
       unicode-transforms == 0.4.0.1,
       QuickCheck
+  default-language: Haskell2010
+
+test-suite reconcile
+  type:             exitcode-stdio-1.0
+  main-is:          ReconcileSpec.hs
+  hs-source-dirs:   test
+  build-depends:
+      base,
+      port-matroid,
+      bytestring,
+      containers
+  default-language: Haskell2010
+
+test-suite universe
+  type:             exitcode-stdio-1.0
+  main-is:          UniverseSpec.hs
+  hs-source-dirs:   test
+  build-depends:
+      base,
+      port-matroid,
+      bytestring,
+      binary,
+      QuickCheck
+  default-language: Haskell2010
+
+test-suite instruction-golden
+  type:             exitcode-stdio-1.0
+  main-is:          InstructionGoldenSpec.hs
+  hs-source-dirs:   test
+  build-depends:
+      base,
+      port-matroid,
+      bytestring
+  default-language: Haskell2010
+
+test-suite instruction-stream-golden
+  type:             exitcode-stdio-1.0
+  main-is:          InstructionStreamGoldenSpec.hs
+  hs-source-dirs:   test
+  build-depends:
+      base,
+      port-matroid,
+      bytestring,
+      cryptohash-sha256
+  default-language: Haskell2010
+
+test-suite replay
+  type:             exitcode-stdio-1.0
+  main-is:          ReplaySpec.hs
+  hs-source-dirs:   test
+  build-depends:
+      base,
+      port-matroid,
+      bytestring
+  default-language: Haskell2010
+
+test-suite halt-golden
+  type:             exitcode-stdio-1.0
+  main-is:          HaltGoldenSpec.hs
+  hs-source-dirs:   test
+  build-depends:
+      base,
+      port-matroid,
+      bytestring
+  default-language: Haskell2010
+
+test-suite reconcile-error-golden
+  type:             exitcode-stdio-1.0
+  main-is:          ReconcileErrorGoldenSpec.hs
+  hs-source-dirs:   test
+  build-depends:
+      base,
+      port-matroid,
+      bytestring
   default-language: Haskell2010
