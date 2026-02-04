@@ -81,6 +81,10 @@ cube-routing-v1
 Deterministic shard assignment + routing
 -> `dev-docs/CUBE-ROUTING.md`
 
+storage-format-v1
+Runtime snapshot/WAL/manifest format
+-> `dev-docs/STORAGE-FORMAT.md`
+
 Any divergence from these specifications is a consensus fork.
 
 Architecture reference:
@@ -88,3 +92,4 @@ Architecture reference:
 - `dev-docs/SCHEDULER-CUBE-ARCH.md`
 - `dev-docs/SCHEDULER-NETWORK.md`
 - `dev-docs/NETWORK-CONVERGENCE.md`
+- `dev-docs/STORAGE-FORMAT.md`
