@@ -18,12 +18,14 @@ import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as C8
 import Network.Socket
 import System.Directory (removeFile, doesFileExist)
+import System.Posix.Files (setFileMode, ownerReadMode, ownerWriteMode, unionFileModes)
 
 runControl :: Config -> MVar NodeState -> IO ()
 runControl cfg stVar = do
   cleanup (cfgControl cfg)
   sock <- socket AF_UNIX Stream defaultProtocol
   bind sock (SockAddrUnix (cfgControl cfg))
+  setFileMode (cfgControl cfg) (ownerReadMode `unionFileModes` ownerWriteMode)
   listen sock 32
   logMsg cfg Info ("control socket on " ++ cfgControl cfg)
   acceptLoop sock

@@ -6,7 +6,7 @@ module Runtime.Node
   ) where
 
 import Runtime.Config (Config(..), LogLevel(..))
-import Runtime.Store (appendWal, writeSnapshot, resetWal)
+import Runtime.Store (appendWal, rotateSnapshotAndWal)
 import Runtime.Log (logMsg)
 
 import Snapshot.Types (Snapshot)
@@ -75,8 +75,7 @@ tickOnce st = do
                   let walCount' = nodeWalCount st + 1
                   if walCount' >= 1000
                     then do
-                      _ <- writeSnapshot (cfgDataDir cfg) snap'
-                      _ <- resetWal (cfgDataDir cfg)
+                      _ <- rotateSnapshotAndWal (cfgDataDir cfg) snap'
                       logMsg cfg Info "snapshot rotation"
                       pure (Right st { nodeSnapshot = snap', nodeWorkSet = canonicalizeWorkSet [], nodeWalCount = 0 })
                     else do

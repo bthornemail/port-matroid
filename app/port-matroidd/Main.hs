@@ -18,6 +18,7 @@ import System.Environment (getArgs)
 import System.Exit (exitFailure)
 import System.FilePath ((</>))
 import System.Posix.Signals (installHandler, Handler(Catch), sigTERM, sigINT)
+import qualified Runtime.Store
 
 main :: IO ()
 main = do
@@ -28,27 +29,39 @@ main = do
   snap' <- replayOrExit (cfgDataDir cfg) snap
   let node = initNode cfg rctx snap'
   stVar <- newMVar node
+  shutdownFlag <- newMVar False
   _ <- forkIO (runServer cfg stVar)
   _ <- forkIO (runControl cfg stVar)
-  _ <- installHandler sigTERM (Catch (shutdown cfg)) Nothing
-  _ <- installHandler sigINT (Catch (shutdown cfg)) Nothing
-  loop cfg stVar
+  _ <- installHandler sigTERM (Catch (signalShutdown shutdownFlag)) Nothing
+  _ <- installHandler sigINT (Catch (signalShutdown shutdownFlag)) Nothing
+  loop cfg stVar shutdownFlag
 
 loop :: Config -> MVar NodeState -> IO ()
-loop cfg stVar = do
+loop cfg stVar shutdownFlag = do
   threadDelay (cfgTickMs cfg * 1000)
-  _ <- modifyMVar stVar $ \st -> do
-    res <- tickOnce st
-    case res of
-      Left err -> do
-        logMsg cfg Error ("tick failed: " ++ err)
-        exitFailure
-      Right st' -> pure (st', ())
-  loop cfg stVar
+  stop <- readMVar shutdownFlag
+  if stop
+    then gracefulShutdown cfg stVar
+    else do
+      _ <- modifyMVar stVar $ \st -> do
+        res <- tickOnce st
+        case res of
+          Left err -> do
+            logMsg cfg Error ("tick failed: " ++ err)
+            exitFailure
+          Right st' -> pure (st', ())
+      loop cfg stVar shutdownFlag
 
-shutdown :: Config -> IO ()
-shutdown cfg = do
-  logMsg cfg Info "shutdown"
+signalShutdown :: MVar Bool -> IO ()
+signalShutdown flag = do
+  _ <- swapMVar flag True
+  pure ()
+
+gracefulShutdown :: Config -> MVar NodeState -> IO ()
+gracefulShutdown cfg stVar = do
+  st <- readMVar stVar
+  _ <- Runtime.Store.rotateSnapshotAndWal (cfgDataDir cfg) (nodeSnapshot st)
+  logMsg cfg Info "shutdown complete"
   exitFailure
 
 configPath :: [String] -> FilePath

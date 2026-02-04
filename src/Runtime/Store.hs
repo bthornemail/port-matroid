@@ -4,6 +4,7 @@ module Runtime.Store
   , appendWal
   , replayWal
   , resetWal
+  , rotateSnapshotAndWal
   , walPath
   , snapshotPath
   ) where
@@ -18,9 +19,12 @@ import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BL
 import Data.Binary.Get
 import Data.Binary.Put
-import System.Directory (createDirectoryIfMissing, doesFileExist)
-import System.FilePath ((</>))
+import System.Directory (createDirectoryIfMissing, doesFileExist, renameFile, removeFile)
+import System.FilePath ((</>), takeDirectory)
 import Control.Monad (foldM)
+import Control.Exception (try, SomeException)
+import System.Posix.IO (openFd, defaultFileFlags, OpenMode(..), closeFd, fsync)
+import System.Posix.Process (getProcessID)
 
 snapshotPath :: FilePath -> FilePath
 snapshotPath dir = dir </> "snapshots" </> "latest.csnp"
@@ -44,7 +48,7 @@ writeSnapshot dir snap = do
   createDirectoryIfMissing True (dir </> "snapshots")
   case encodeSnapshot snap of
     Left err -> pure (Left (show err))
-    Right bytes -> BS.writeFile path bytes >> pure (Right ())
+    Right bytes -> atomicWriteFile path bytes
 
 appendWal :: FilePath -> BS.ByteString -> IO (Either String ())
 appendWal dir payload = do
@@ -54,13 +58,29 @@ appendWal dir payload = do
         putWord32le (fromIntegral (BS.length payload))
         putByteString payload
   BS.appendFile path entry
+  _ <- fsyncPath path
   pure (Right ())
 
 resetWal :: FilePath -> IO (Either String ())
 resetWal dir = do
   createDirectoryIfMissing True (dir </> "wal")
-  BS.writeFile (walPath dir) BS.empty
-  pure (Right ())
+  atomicWriteFile (walPath dir) BS.empty
+
+rotateSnapshotAndWal :: FilePath -> Snapshot -> IO (Either String ())
+rotateSnapshotAndWal dir snap = do
+  createDirectoryIfMissing True (dir </> "snapshots")
+  createDirectoryIfMissing True (dir </> "wal")
+  case encodeSnapshot snap of
+    Left err -> pure (Left (show err))
+    Right bytes -> do
+      r1 <- atomicWriteFile (snapshotPath dir) bytes
+      case r1 of
+        Left err -> pure (Left ("snapshot rotate failed: " ++ err))
+        Right () -> do
+          r2 <- atomicWriteFile (walPath dir) BS.empty
+          case r2 of
+            Left err -> pure (Left ("wal reset failed: " ++ err))
+            Right () -> pure (Right ())
 
 replayWal :: FilePath -> Snapshot -> IO (Either String Snapshot)
 replayWal dir snap = do
@@ -94,3 +114,24 @@ replayWal dir snap = do
           case applyInstructions s (AuthorityMask 0xF) instrs of
             (Halt r, _) -> Left ("wal replay halted: " ++ show r)
             (Next, s') -> Right s'
+
+atomicWriteFile :: FilePath -> BS.ByteString -> IO (Either String ())
+atomicWriteFile final bytes = do
+  pid <- getProcessID
+  let tmp = final ++ ".tmp." ++ show pid
+  r <- try $ do
+    createDirectoryIfMissing True (takeDirectory final)
+    BS.writeFile tmp bytes
+    _ <- fsyncPath tmp
+    renameFile tmp final
+  case r of
+    Left (e :: SomeException) -> do
+      _ <- try (removeFile tmp) :: IO (Either SomeException ())
+      pure (Left (show e))
+    Right () -> pure (Right ())
+
+fsyncPath :: FilePath -> IO ()
+fsyncPath path = do
+  fd <- openFd path ReadOnly Nothing defaultFileFlags
+  _ <- fsync fd
+  closeFd fd
