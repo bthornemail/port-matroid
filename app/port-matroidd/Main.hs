@@ -15,7 +15,7 @@ import Control.Concurrent (forkIO, threadDelay)
 import Control.Concurrent.MVar
 import qualified Data.ByteString as BS
 import System.Environment (getArgs)
-import System.Exit (exitFailure)
+import System.Exit (exitFailure, exitSuccess)
 import System.FilePath ((</>))
 import System.Posix.Signals (installHandler, Handler(Catch), sigTERM, sigINT)
 import qualified Runtime.Store
@@ -62,9 +62,14 @@ signalShutdown flag = do
 gracefulShutdown :: Config -> MVar NodeState -> IO ()
 gracefulShutdown cfg stVar = do
   st <- readMVar stVar
-  _ <- Runtime.Store.rotateSnapshotAndWal (cfgDataDir cfg) (nodeSnapshot st)
-  logMsg cfg Info "shutdown complete"
-  exitFailure
+  res <- Runtime.Store.rotateSnapshotAndWal (cfgDataDir cfg) (nodeSnapshot st)
+  case res of
+    Left err -> do
+      logMsg cfg Error ("shutdown failed: " ++ err)
+      exitFailure
+    Right () -> do
+      logMsg cfg Info "shutdown complete"
+      exitSuccess
 
 configPath :: [String] -> FilePath
 configPath args =

@@ -44,24 +44,24 @@ runControl cfg stVar = do
       case eframe of
         Left _ -> close conn
         Right msg -> do
-          resp <- handleCmd (C8.unpack (C8.takeWhile (/= '\n') msg))
-          sendFrame conn (C8.pack resp)
+          resp <- handleCmd (C8.takeWhile (/= '\n') msg)
+          sendFrame conn resp
           close conn
 
     handleCmd cmd = do
       st <- readMVar stVar
-      case words cmd of
+      case words (C8.unpack cmd) of
         ["status"] ->
-          pure ("ok epoch=" ++ show (routingEpoch (nodeRouting st)) ++ "\n")
+          pure (C8.pack ("ok epoch=" ++ show (routingEpoch (nodeRouting st)) ++ "\n"))
         ["dump-snapshot", path] -> do
           case encodeSnapshotBytes (nodeSnapshot st) of
-            Left err -> pure ("error " ++ err ++ "\n")
-            Right bytes -> BS.writeFile path bytes >> pure "ok\n"
+            Left err -> pure (C8.pack ("error " ++ err ++ "\n"))
+            Right bytes -> BS.writeFile path bytes >> pure (C8.pack "ok\n")
         ["dump-snapshot"] -> do
           case encodeSnapshotBytes (nodeSnapshot st) of
-            Left err -> pure ("error " ++ err ++ "\n")
-            Right bytes -> pure (C8.unpack bytes)
-        _ -> pure "error unknown\n"
+            Left err -> pure (C8.pack ("error " ++ err ++ "\n"))
+            Right bytes -> pure bytes
+        _ -> pure (C8.pack "error unknown\n")
 
 encodeSnapshotBytes :: Snapshot -> Either String BS.ByteString
 encodeSnapshotBytes snap =

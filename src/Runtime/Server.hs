@@ -36,9 +36,9 @@ runServer cfg stVar = do
       pure sock
 
     acceptLoop sem sock = do
-      (conn, _peer) <- accept sock
       waitQSem sem
-      _ <- forkIO (handleConn conn `finally` signalQSem sem)
+      (conn, _peer) <- accept sock
+      _ <- forkIO (handleConn conn `finally` (close conn >> signalQSem sem))
       acceptLoop sem sock
 
     handleConn conn = do
