@@ -10,6 +10,7 @@ import qualified Data.ByteString as BS
 import qualified Data.Set as Set
 import Data.Int (Int64)
 import Data.Bits (shiftL)
+import Data.List (nub, sort)
 import Data.List (foldl')
 
 validateWorkSet :: [WorkItem] -> Either ScheduleError [(WorkItem, [Int64])]
@@ -79,7 +80,7 @@ touchSet :: WorkItem -> Either ScheduleError [Int64]
 touchSet item =
   case decodeStream (workInstrStream item) of
     Left _ -> Left SchErrMalformedWork
-    Right instrs -> Right (collect instrs [])
+    Right instrs -> Right (canonicalize (collect instrs []))
   where
     collect [] acc = acc
     collect (i:is) acc =
@@ -97,6 +98,8 @@ touchSet item =
           Just eid -> collect is (eid : acc)
           Nothing -> collect is acc
         _ -> collect is acc
+
+    canonicalize = sort . nub
 
 getEntityId :: Instruction -> Maybe Int64
 getEntityId instr =

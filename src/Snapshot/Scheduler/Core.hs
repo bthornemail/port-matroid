@@ -21,10 +21,13 @@ scheduleStep params state items = do
   let grouped = groupByCell validated
   let cells = rotateCells (cursorCell state) (Map.keys grouped)
   let queues = Map.map sortQueue grouped
-  let (result, lastCell) = buildBatch params cells queues Set.empty [] 0 0 0
+  let (result, lastCell) = buildBatch params cells queues Set.empty [] 0 0 0 Nothing
   batchInstrs <- result
   batchBytes <- mapEncode (encodeStream batchInstrs)
-  let nextState = SchedulerState { cursorCell = lastCell }
+  let nextCursor = case lastCell of
+        Nothing -> cursorCell state
+        Just c -> Just c
+  let nextState = SchedulerState { cursorCell = nextCursor }
   return (batchBytes, nextState)
 
 canonicalWorkSet :: [WorkItem] -> [WorkItem]
@@ -76,29 +79,30 @@ buildBatch
   -> Word32
   -> Word32
   -> Word32
+  -> Maybe Cell
   -> (Either ScheduleError [Instruction], Maybe Cell)
-buildBatch params cells queues touched acc cost skips inspected =
+buildBatch params cells queues touched acc cost skips inspected lastAccepted =
   case nextCandidate cells queues of
-    Nothing -> (Right acc, cursorFromAcc cells acc)
+    Nothing -> (Right acc, lastAccepted)
     Just (cell, (w, t), queues') ->
       if inspected >= maxWork params
-        then (Left SchErrLimitExceeded, cursorFromAcc cells acc)
+        then (Left SchErrLimitExceeded, lastAccepted)
       else if skips >= maxSkip params
-        then (Left SchErrLimitExceeded, cursorFromAcc cells acc)
-        else case addCost cost (workCost w) of
-          Left _ -> (Left SchErrInternal, cursorFromAcc cells acc)
+        then (Left SchErrLimitExceeded, lastAccepted)
+      else case addCost cost (workCost w) of
+          Left _ -> (Left SchErrInternal, lastAccepted)
           Right cost' ->
             if cost' > sliceBudget params
-              then (Right acc, cursorFromAcc cells acc)
+              then (Right acc, lastAccepted)
               else if conflicts touched t
-                then buildBatch params cells (pop cell queues') touched acc cost (skips + 1) (inspected + 1)
+                then buildBatch params cells (pop cell queues') touched acc cost (skips + 1) (inspected + 1) lastAccepted
                 else case decodeStream (workInstrStream w) of
-                  Left _ -> (Left SchErrMalformedWork, cursorFromAcc cells acc)
+                  Left _ -> (Left SchErrMalformedWork, lastAccepted)
                   Right instrs ->
                     let touched' = addTouches touched t
                         acc' = acc ++ instrs
                         queues'' = pop cell queues'
-                    in buildBatch params cells queues'' touched' acc' cost' skips (inspected + 1)
+                    in buildBatch params cells queues'' touched' acc' cost' skips (inspected + 1) (Just cell)
 
 nextCandidate :: [Cell] -> Map.Map Cell [(WorkItem, [Int64])] -> Maybe (Cell, (WorkItem, [Int64]), Map.Map Cell [(WorkItem, [Int64])])
 nextCandidate cells queues =
@@ -127,10 +131,7 @@ addTouches :: Set.Set Int64 -> [Int64] -> Set.Set Int64
 addTouches = List.foldl' (flip Set.insert)
 
 cursorFromAcc :: [Cell] -> [Instruction] -> Maybe Cell
-cursorFromAcc cells _ =
-  case cells of
-    [] -> Nothing
-    (c:_) -> Just c
+cursorFromAcc _ _ = Nothing
 
 addCost :: Word32 -> Word32 -> Either () Word32
 addCost a b =

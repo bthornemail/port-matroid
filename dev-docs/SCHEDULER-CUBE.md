@@ -66,6 +66,10 @@ TouchSet entities ⊆ [e0..e1]
 
 If not, scheduling MUST fail with SCH_ERR_OUT_OF_RANGE.
 
+TouchSet is canonical:
+it MUST be treated as a sorted, duplicate-free set.
+Instruction traversal order is non-semantic.
+
 ---
 
 4. WorkItem Definition
@@ -103,6 +107,10 @@ cursor_cell_key : bytes (canonical encoding of last chosen cell)
 
 The next scheduling round starts scanning from the next cell after cursor in
 canonical cell order.
+
+Cursor update law:
+cursor MUST be set to the cell of the last accepted WorkItem in the batch.
+If no WorkItem is accepted, cursor remains unchanged.
 
 ---
 
@@ -274,6 +282,9 @@ Error priority order:
 6. SCH_ERR_INTERNAL
 
 Errors MUST be deterministic and consistent across implementations.
+
+SCH_ERR_INTERNAL MUST NOT occur for any canonical input.
+If it does, the implementation is non-compliant.
 
 ---
 
