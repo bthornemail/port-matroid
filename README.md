@@ -49,6 +49,9 @@ An implementation is compliant if it passes all of the following suites:
 12. Union laws
 - `cabal test union-law`
 
+13. Convergence simulator
+- `cabal test convergence-sim`
+
 Frozen Consensus Specifications (v1)
 
 The following documents define consensus-critical behavior.

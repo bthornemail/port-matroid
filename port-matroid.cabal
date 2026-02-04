@@ -27,6 +27,7 @@ library
       Snapshot.Scheduler.Network.Authority
       Snapshot.Scheduler.Network.Epoch
       Snapshot.Scheduler.Network.State
+      Snapshot.Scheduler.Network.Sim
       Snapshot.Routing.Types
       Snapshot.Routing.Encode
       Snapshot.Routing.Decode
@@ -292,6 +293,17 @@ test-suite network-state
 test-suite union-law
   type:             exitcode-stdio-1.0
   main-is:          UnionLawSpec.hs
+  hs-source-dirs:   test
+  build-depends:
+      base,
+      port-matroid,
+      bytestring,
+      QuickCheck
+  default-language: Haskell2010
+
+test-suite convergence-sim
+  type:             exitcode-stdio-1.0
+  main-is:          ConvergenceSimSpec.hs
   hs-source-dirs:   test
   build-depends:
       base,
