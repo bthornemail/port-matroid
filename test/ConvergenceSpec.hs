@@ -57,6 +57,7 @@ main = do
                 then error "after snapshot mismatch"
                 else do
                   runCollisionCase
+                  runDuplicateOkCase
                   putStrLn "OK"
 
 runCollisionCase :: IO ()
@@ -72,6 +73,23 @@ runCollisionCase = do
   case canonicalUnion wa wb of
     Left _ -> pure ()
     Right _ -> error "collision union unexpectedly succeeded"
+
+runDuplicateOkCase :: IO ()
+runDuplicateOkCase = do
+  waBytes <- BS.readFile "test/convergence/dupe-ok-a.workset"
+  wbBytes <- BS.readFile "test/convergence/dupe-ok-b.workset"
+  wa <- case decodeWorkSet waBytes of
+    Left err -> error ("decode dupe-ok-a failed: " ++ show err)
+    Right w -> pure w
+  wb <- case decodeWorkSet wbBytes of
+    Left err -> error ("decode dupe-ok-b failed: " ++ show err)
+    Right w -> pure w
+  case canonicalUnion wa wb of
+    Left err -> error ("duplicate ok union failed: " ++ err)
+    Right ws ->
+      if length ws /= 1
+        then error "duplicate ok union wrong size"
+        else pure ()
 
 canonicalUnion :: [WorkItem] -> [WorkItem] -> Either String [WorkItem]
 canonicalUnion a b =
