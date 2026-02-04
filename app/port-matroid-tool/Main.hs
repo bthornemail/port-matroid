@@ -57,7 +57,7 @@ audit dir = do
   case snap of
     Left err -> die ("snapshot error: " ++ err)
     Right s -> do
-      res <- Runtime.Store.replayWal dir s
+      res <- Runtime.Store.replayWalWith False dir s
       case res of
         Left err -> die ("wal replay error: " ++ err)
         Right _ -> do
@@ -66,5 +66,5 @@ audit dir = do
             Left err -> die ("wal count error: " ++ err)
             Right n ->
               case gen of
-                Just g -> putStrLn ("ok gen=" ++ show g ++ " wal_entries=" ++ show n)
-                Nothing -> putStrLn ("ok wal_entries=" ++ show n)
+                Just g -> putStrLn ("ok gen=" ++ show g ++ " wal_entries=" ++ show n ++ " wal_version=" ++ show Runtime.Store.walVersion)
+                Nothing -> putStrLn ("ok wal_entries=" ++ show n ++ " wal_version=" ++ show Runtime.Store.walVersion)

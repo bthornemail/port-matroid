@@ -18,6 +18,8 @@ module Runtime.Store
   , walEntryCount
   , ensureWalHeader
   , verifyWalHeader
+  , walVersion
+  , replayWalWith
   ) where
 
 import Snapshot.Decode (decodeSnapshot)
@@ -39,9 +41,10 @@ import Data.Char (isSpace)
 import System.IO (withBinaryFile, IOMode(ReadMode))
 import System.Posix.IO (openFd, defaultFileFlags, OpenMode(..), closeFd, fsync)
 import System.Posix.Process (getProcessID)
-import Data.Bits (xor, (.&.), shiftR)
+import Data.Bits (xor, (.&.), shiftR, (.|.), shiftL)
 import qualified Data.List as List
 import Text.Read (readMaybe)
+import Data.Word (Word16)
 
 snapshotPath :: FilePath -> FilePath
 snapshotPath dir = dir </> "snapshots" </> "latest.csnp"
@@ -57,6 +60,12 @@ data Manifest = Manifest
 
 manifestGeneration :: Manifest -> Int
 manifestGeneration = mfGen
+
+manifestPayload :: Int -> FilePath -> FilePath -> String
+manifestPayload gen snap wal =
+  "gen=" ++ show gen ++ "\n" ++
+  "snapshot=" ++ snap ++ "\n" ++
+  "wal=" ++ wal ++ "\n"
 
 manifestPath :: FilePath -> FilePath
 manifestPath dir = dir </> "manifest"
@@ -78,7 +87,18 @@ readManifest dir = do
       case (lookup "gen" kvs, lookup "snapshot" kvs, lookup "wal" kvs) of
         (Just g, Just s, Just w) ->
           case readMaybe g of
-            Just n -> Right (Manifest n s w)
+            Just n ->
+              case lookup "crc" kvs of
+                Nothing -> Right (Manifest n s w)
+                Just c ->
+                  case readMaybe c of
+                    Just crc ->
+                      let payload = manifestPayload n s w
+                          want = crc32 (BS.pack (map (toEnum . fromEnum) payload))
+                      in if crc == want
+                           then Right (Manifest n s w)
+                           else Left "manifest crc mismatch"
+                    Nothing -> Left "manifest bad crc"
             Nothing -> Left "manifest bad gen"
         _ -> Left "manifest incomplete"
       where
@@ -94,10 +114,10 @@ readManifest dir = do
 
 writeManifest :: FilePath -> Manifest -> IO (Either String ())
 writeManifest dir mf = do
-  let payload = "gen=" ++ show (mfGen mf) ++ "\n" ++
-                "snapshot=" ++ mfSnapshot mf ++ "\n" ++
-                "wal=" ++ mfWal mf ++ "\n"
-  atomicWriteFile (manifestPath dir) (BS.pack (map (toEnum . fromEnum) payload))
+  let payload = manifestPayload (mfGen mf) (mfSnapshot mf) (mfWal mf)
+  let crc = crc32 (BS.pack (map (toEnum . fromEnum) payload))
+  let body = payload ++ "crc=" ++ show crc ++ "\n"
+  atomicWriteFile (manifestPath dir) (BS.pack (map (toEnum . fromEnum) body))
 
 currentSnapshotPath :: FilePath -> IO FilePath
 currentSnapshotPath dir = do
@@ -179,7 +199,10 @@ rotateSnapshotAndWal dir snap = do
                 Right () -> pure (Right ())
 
 replayWal :: FilePath -> Snapshot -> IO (Either String Snapshot)
-replayWal dir snap = do
+replayWal = replayWalWith False
+
+replayWalWith :: Bool -> FilePath -> Snapshot -> IO (Either String Snapshot)
+replayWalWith truncateLast dir snap = do
   path <- currentWalPath dir
   exists <- doesFileExist path
   if not exists
@@ -190,30 +213,13 @@ replayWal dir snap = do
         Left err -> pure (Left err)
         Right () -> do
           bytes <- BS.readFile path
-          case runGetOrFail getEntries (BL.fromStrict bytes) of
-            Left (_, _, err) -> pure (Left ("wal parse error: " ++ err))
-            Right (_, _, entries) ->
+          case parseEntries bytes truncateLast of
+            Left err -> pure (Left err)
+            Right entries ->
               case foldM applyOne snap entries of
                 Left err -> pure (Left err)
                 Right res -> pure (Right res)
   where
-    getEntries = do
-      header <- getByteString (BS.length walHeader)
-      if header /= walHeader
-        then fail "wal header mismatch"
-        else go []
-    go acc = do
-      done <- isEmpty
-      if done
-        then pure (reverse acc)
-        else do
-          len <- getWord32le
-          crc <- getWord32le
-          payload <- getByteString (fromIntegral len)
-          if crc /= crc32 payload
-            then fail "wal checksum mismatch"
-            else go (payload : acc)
-
     applyOne s b =
       case decodeStream b of
         Left _ -> Left "wal decode failure"
@@ -221,6 +227,39 @@ replayWal dir snap = do
           case applyInstructions s (AuthorityMask 0xF) instrs of
             (Halt r, _) -> Left ("wal replay halted: " ++ show r)
             (Next, s') -> Right s'
+
+parseEntries :: BS.ByteString -> Bool -> Either String [BS.ByteString]
+parseEntries bytes truncateLast =
+  let hdrLen = BS.length walHeader
+      total = BS.length bytes
+  in if total < hdrLen
+       then Left "wal header missing"
+       else
+         let loop off acc =
+               if off == total
+                 then Right (reverse acc)
+                 else if off + 8 > total
+                   then if truncateLast then Right (reverse acc) else Left "wal trailing partial entry"
+                   else
+                     let len = get32 off
+                         crc = get32 (off + 4)
+                         start = off + 8
+                         end = start + fromIntegral len
+                     in if end > total
+                          then if truncateLast then Right (reverse acc) else Left "wal trailing partial entry"
+                          else
+                            let payload = BS.take (fromIntegral len) (BS.drop start bytes)
+                            in if crc /= crc32 payload
+                                 then Left "wal checksum mismatch"
+                                 else loop end (payload:acc)
+         in loop hdrLen []
+  where
+    get32 i =
+      let b0 = fromIntegral (BS.index bytes i) :: Word32
+          b1 = fromIntegral (BS.index bytes (i + 1)) :: Word32
+          b2 = fromIntegral (BS.index bytes (i + 2)) :: Word32
+          b3 = fromIntegral (BS.index bytes (i + 3)) :: Word32
+      in b0 .|. (b1 `shiftL` 8) .|. (b2 `shiftL` 16) .|. (b3 `shiftL` 24)
 
 atomicWriteFile :: FilePath -> BS.ByteString -> IO (Either String ())
 atomicWriteFile final bytes = do
@@ -293,6 +332,9 @@ walHeader =
   let magic = BS.pack [0x50,0x4d,0x57,0x41,0x4c] -- "PMWAL"
       ver = BL.toStrict (runPut (putWord16le 1))
   in magic <> ver
+
+walVersion :: Word16
+walVersion = 1
 
 ensureWalHeader :: FilePath -> IO (Either String ())
 ensureWalHeader path = do

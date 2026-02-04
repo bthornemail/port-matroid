@@ -24,6 +24,9 @@ Tick interval in milliseconds.
 Idle connection timeout in milliseconds.
 .It Ic conn_limit
 Maximum concurrent network connections.
+.It Ic wal_truncate
+Boolean: allow truncation of a partial trailing WAL entry during replay.
+Default: false.
 .It Ic log_format
 Either .Dq text or .Dq json .
 .It Ic log_level
@@ -41,6 +44,7 @@ max_frame_bytes=1048576
 tick_ms=250
 idle_ms=5000
 conn_limit=256
+wal_truncate=false
 log_format=json
 log_level=info
 readonly=false

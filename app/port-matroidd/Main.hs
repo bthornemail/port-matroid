@@ -27,7 +27,7 @@ main = do
   cfg <- loadConfigOrExit (configPath args)
   rctx <- loadRoutingOrExit (cfgDataDir cfg </> "routing.ctx")
   snap <- loadSnapshotOrExit (cfgDataDir cfg)
-  snap' <- replayOrExit (cfgDataDir cfg) snap
+  snap' <- replayOrExit (cfgDataDir cfg) snap (cfgWalTruncate cfg)
   let node = initNode cfg rctx snap'
   stVar <- newMVar node
   shutdownFlag <- newMVar False
@@ -110,9 +110,9 @@ loadSnapshotOrExit dir = do
       exitFailure
     Right s -> pure s
 
-replayOrExit :: FilePath -> Snapshot.Types.Snapshot -> IO Snapshot.Types.Snapshot
-replayOrExit dir snap = do
-  res <- replayWal dir snap
+replayOrExit :: FilePath -> Snapshot.Types.Snapshot -> Bool -> IO Snapshot.Types.Snapshot
+replayOrExit dir snap truncateLast = do
+  res <- replayWalWith truncateLast dir snap
   case res of
     Left err -> do
       putStrLn ("wal error: " ++ err)

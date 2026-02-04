@@ -24,6 +24,7 @@ data Config = Config
   , cfgTickMs :: Int
   , cfgIdleMs :: Int
   , cfgConnLimit :: Int
+  , cfgWalTruncate :: Bool
   , cfgLogFormat :: LogFormat
   , cfgLogLevel :: LogLevel
   , cfgReadonly :: Bool
@@ -38,6 +39,7 @@ defaultConfig = Config
   , cfgTickMs = 250
   , cfgIdleMs = 5000
   , cfgConnLimit = 256
+  , cfgWalTruncate = False
   , cfgLogFormat = LogJson
   , cfgLogLevel = Info
   , cfgReadonly = False
@@ -75,6 +77,7 @@ loadConfig path = do
         "tick_ms" -> readInt v >>= \n -> Right cfg { cfgTickMs = n }
         "idle_ms" -> readInt v >>= \n -> Right cfg { cfgIdleMs = n }
         "conn_limit" -> readInt v >>= \n -> Right cfg { cfgConnLimit = n }
+        "wal_truncate" -> parseBool v >>= \b -> Right cfg { cfgWalTruncate = b }
         "log_format" -> parseFormat v >>= \f -> Right cfg { cfgLogFormat = f }
         "log_level" -> parseLevel v >>= \l -> Right cfg { cfgLogLevel = l }
         "readonly" -> parseBool v >>= \b -> Right cfg { cfgReadonly = b }
