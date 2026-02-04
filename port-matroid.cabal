@@ -19,6 +19,12 @@ library
       Snapshot.Scheduler.Encode
       Snapshot.Scheduler.Validate
       Snapshot.Scheduler.Core
+      Snapshot.Scheduler.Network.Types
+      Snapshot.Scheduler.Network.Encode
+      Snapshot.Scheduler.Network.Decode
+      Snapshot.Scheduler.Network.Digest
+      Snapshot.Scheduler.Network.Authority
+      Snapshot.Scheduler.Network.Epoch
       Snapshot.Routing.Types
       Snapshot.Routing.Encode
       Snapshot.Routing.Decode
@@ -229,4 +235,34 @@ test-suite convergence
       port-matroid,
       bytestring,
       containers
+  default-language: Haskell2010
+
+test-suite network-digest-golden
+  type:             exitcode-stdio-1.0
+  main-is:          NetworkDigestGoldenSpec.hs
+  hs-source-dirs:   test
+  build-depends:
+      base,
+      port-matroid,
+      bytestring
+  default-language: Haskell2010
+
+test-suite network-authority
+  type:             exitcode-stdio-1.0
+  main-is:          NetworkAuthoritySpec.hs
+  hs-source-dirs:   test
+  build-depends:
+      base,
+      port-matroid,
+      bytestring
+  default-language: Haskell2010
+
+test-suite network-epoch
+  type:             exitcode-stdio-1.0
+  main-is:          NetworkEpochSpec.hs
+  hs-source-dirs:   test
+  build-depends:
+      base,
+      port-matroid,
+      bytestring
   default-language: Haskell2010

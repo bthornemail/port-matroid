@@ -31,6 +31,15 @@ An implementation is compliant if it passes all of the following suites:
 6. Convergence law
 - `cabal test convergence`
 
+7. Network digest law
+- `cabal test network-digest-golden`
+
+8. Network authority law
+- `cabal test network-authority`
+
+9. Network epoch law
+- `cabal test network-epoch`
+
 Frozen Consensus Specifications (v1)
 
 The following documents define consensus-critical behavior.
