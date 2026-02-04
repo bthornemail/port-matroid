@@ -21,6 +21,9 @@ Read the current snapshot and WAL from .Ar data-dir, replay WAL deterministicall
 and report integrity status.
 Output includes generation, WAL entry count, and WAL format version.
 .El
+.Sh NOTES
+The runtime storage persistence format (manifest, snapshots, WAL) is defined in
+.Pa dev-docs/STORAGE-FORMAT.md .
 .Sh EXIT STATUS
 .Ex -std
 .Sh SEE ALSO
