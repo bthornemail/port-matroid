@@ -18,6 +18,11 @@ An implementation is compliant if it passes all of the following suites:
 3. Replay contract
 - `cabal test replay`
 
+4. Scheduler law
+- `cabal test scheduler-golden`
+- `cabal test scheduler-property`
+- `cabal test scheduler-error-golden`
+
 Frozen Consensus Specifications (v1)
 
 The following documents define consensus-critical behavior.
@@ -39,7 +44,12 @@ reconcile-law-v1
 Section reconciliation + error priority model
 -> `dev-docs/RECONCILIATION-INVARIANTS.md`
 
+scheduler-law-v1
+Deterministic scheduling + conflict/priority model
+-> `dev-docs/SCHEDULER-CUBE.md`
+
 Any divergence from these specifications is a consensus fork.
 
 Architecture reference:
 - `dev-docs/UNIVERSE-ARCHITECTURE.md`
+- `dev-docs/SCHEDULER-CUBE-ARCH.md`
