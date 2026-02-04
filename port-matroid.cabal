@@ -19,6 +19,10 @@ library
       Snapshot.Scheduler.Encode
       Snapshot.Scheduler.Validate
       Snapshot.Scheduler.Core
+      Snapshot.Routing.Types
+      Snapshot.Routing.Encode
+      Snapshot.Routing.Decode
+      Snapshot.Routing.Core
   hs-source-dirs:   src
   build-depends:
       base >=4.14 && <5,
@@ -178,6 +182,16 @@ test-suite scheduler-property
 test-suite scheduler-error-golden
   type:             exitcode-stdio-1.0
   main-is:          SchedulerErrorGoldenSpec.hs
+  hs-source-dirs:   test
+  build-depends:
+      base,
+      port-matroid,
+      bytestring
+  default-language: Haskell2010
+
+test-suite routing-golden
+  type:             exitcode-stdio-1.0
+  main-is:          RoutingGoldenSpec.hs
   hs-source-dirs:   test
   build-depends:
       base,

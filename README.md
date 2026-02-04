@@ -23,6 +23,9 @@ An implementation is compliant if it passes all of the following suites:
 - `cabal test scheduler-property`
 - `cabal test scheduler-error-golden`
 
+5. Cube routing law
+- `cabal test routing-golden`
+
 Frozen Consensus Specifications (v1)
 
 The following documents define consensus-critical behavior.
@@ -48,8 +51,13 @@ scheduler-law-v1
 Deterministic scheduling + conflict/priority model
 -> `dev-docs/SCHEDULER-CUBE.md`
 
+cube-routing-v1
+Deterministic shard assignment + routing
+-> `dev-docs/CUBE-ROUTING.md`
+
 Any divergence from these specifications is a consensus fork.
 
 Architecture reference:
 - `dev-docs/UNIVERSE-ARCHITECTURE.md`
 - `dev-docs/SCHEDULER-CUBE-ARCH.md`
+- `dev-docs/SCHEDULER-NETWORK.md`
