@@ -6,7 +6,7 @@ module Runtime.Node
   ) where
 
 import Runtime.Config (Config(..), LogLevel(..))
-import Runtime.Store (appendWal)
+import Runtime.Store (appendWal, writeSnapshot, resetWal)
 import Runtime.Log (logMsg)
 
 import Snapshot.Types (Snapshot)
@@ -27,6 +27,7 @@ data NodeState = NodeState
   , nodeRouting :: RoutingContext
   , nodeSnapshot :: Snapshot
   , nodeWorkSet :: CanonicalWorkSet
+  , nodeWalCount :: Int
   } deriving (Eq, Show)
 
 initNode :: Config -> RoutingContext -> Snapshot -> NodeState
@@ -35,6 +36,7 @@ initNode cfg ctx snap = NodeState
   , nodeRouting = ctx
   , nodeSnapshot = snap
   , nodeWorkSet = canonicalizeWorkSet []
+  , nodeWalCount = 0
   }
 
 handleMessage :: NodeState -> BS.ByteString -> IO (Either NetError NodeState)
@@ -70,5 +72,13 @@ tickOnce st = do
                 then pure (Right st { nodeSnapshot = snap' })
                 else do
                   _ <- appendWal (cfgDataDir cfg) batch
-                  logMsg cfg Info "applied batch"
-                  pure (Right st { nodeSnapshot = snap', nodeWorkSet = canonicalizeWorkSet [] })
+                  let walCount' = nodeWalCount st + 1
+                  if walCount' >= 1000
+                    then do
+                      _ <- writeSnapshot (cfgDataDir cfg) snap'
+                      _ <- resetWal (cfgDataDir cfg)
+                      logMsg cfg Info "snapshot rotation"
+                      pure (Right st { nodeSnapshot = snap', nodeWorkSet = canonicalizeWorkSet [], nodeWalCount = 0 })
+                    else do
+                      logMsg cfg Info "applied batch"
+                      pure (Right st { nodeSnapshot = snap', nodeWorkSet = canonicalizeWorkSet [], nodeWalCount = walCount' })

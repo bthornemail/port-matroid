@@ -8,7 +8,7 @@ module Runtime.Config
 
 import qualified Data.ByteString as BS
 import Data.Char (isSpace)
-import Data.Maybe (fromMaybe)
+import System.Directory (doesFileExist)
 
 data LogFormat = LogText | LogJson
   deriving (Eq, Show)
@@ -41,9 +41,13 @@ defaultConfig = Config
 
 loadConfig :: FilePath -> IO (Either String Config)
 loadConfig path = do
-  exists <- BS.readFile path
-  let ls = filter (not . null) (map strip (lines (toString exists)))
-  pure (foldl apply (Right defaultConfig) ls)
+  exists <- doesFileExist path
+  if not exists
+    then pure (Left ("config file missing: " ++ path))
+    else do
+      contents <- BS.readFile path
+      let ls = filter (not . null) (map strip (lines (toString contents)))
+      pure (foldl apply (Right defaultConfig) ls)
   where
     toString = map (toEnum . fromEnum) . BS.unpack
     strip s = trim (takeWhile (/= '#') s)

@@ -73,6 +73,7 @@ executable port-matroidd
       containers,
       directory,
       filepath,
+      unix,
       network,
       time,
       port-matroid
@@ -84,7 +85,8 @@ executable port-matroidctl
   build-depends:
       base,
       bytestring,
-      network
+      network,
+      port-matroid
   default-language: Haskell2010
 
 executable port-matroid-tool

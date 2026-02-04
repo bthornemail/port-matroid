@@ -3,6 +3,7 @@ module Runtime.Store
   , writeSnapshot
   , appendWal
   , replayWal
+  , resetWal
   , walPath
   , snapshotPath
   ) where
@@ -19,6 +20,7 @@ import Data.Binary.Get
 import Data.Binary.Put
 import System.Directory (createDirectoryIfMissing, doesFileExist)
 import System.FilePath ((</>))
+import Control.Monad (foldM)
 
 snapshotPath :: FilePath -> FilePath
 snapshotPath dir = dir </> "snapshots" </> "latest.csnp"
@@ -54,6 +56,12 @@ appendWal dir payload = do
   BS.appendFile path entry
   pure (Right ())
 
+resetWal :: FilePath -> IO (Either String ())
+resetWal dir = do
+  createDirectoryIfMissing True (dir </> "wal")
+  BS.writeFile (walPath dir) BS.empty
+  pure (Right ())
+
 replayWal :: FilePath -> Snapshot -> IO (Either String Snapshot)
 replayWal dir snap = do
   let path = walPath dir
@@ -64,7 +72,10 @@ replayWal dir snap = do
       bytes <- BS.readFile path
       case runGetOrFail getEntries (BL.fromStrict bytes) of
         Left _ -> pure (Left "wal parse error")
-        Right (_, _, entries) -> applyAll snap entries
+        Right (_, _, entries) ->
+          case foldM applyOne snap entries of
+            Left err -> pure (Left err)
+            Right res -> pure (Right res)
   where
     getEntries = do
       done <- isEmpty
@@ -76,11 +87,10 @@ replayWal dir snap = do
           rest <- getEntries
           pure (payload : rest)
 
-    applyAll s [] = pure (Right s)
-    applyAll s (b:bs) =
+    applyOne s b =
       case decodeStream b of
-        Left _ -> pure (Left "wal decode failure")
+        Left _ -> Left "wal decode failure"
         Right instrs ->
           case applyInstructions s (AuthorityMask 0xF) instrs of
-            (Halt r, _) -> pure (Left ("wal replay halted: " ++ show r))
-            (Next, s') -> applyAll s' bs
+            (Halt r, _) -> Left ("wal replay halted: " ++ show r)
+            (Next, s') -> Right s'

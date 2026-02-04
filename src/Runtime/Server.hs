@@ -9,6 +9,7 @@ import Runtime.Node
 
 import Control.Concurrent (forkIO)
 import Control.Concurrent.MVar
+import Control.Concurrent.QSem
 import qualified Data.ByteString as BS
 import Network.Socket
 import Network.Socket.ByteString (sendAll)
@@ -18,7 +19,8 @@ runServer cfg stVar = do
   addr <- resolve (cfgListen cfg)
   sock <- open addr
   logMsg cfg Info ("listening on " ++ cfgListen cfg)
-  acceptLoop sock
+  sem <- newQSem 256
+  acceptLoop sem sock
   where
     resolve addr = do
       let (host, port) = splitHostPort addr
@@ -32,24 +34,24 @@ runServer cfg stVar = do
       listen sock 128
       pure sock
 
-    acceptLoop sock = do
+    acceptLoop sem sock = do
       (conn, _peer) <- accept sock
-      _ <- forkIO (handleConn conn)
-      acceptLoop sock
+      _ <- forkIO (withQSem sem (handleConn conn))
+      acceptLoop sem sock
 
     handleConn conn = do
-      eframe <- recvFrame conn (cfgMaxFrame cfg)
-      case eframe of
-        Left _ -> close conn
-        Right frame -> do
-          st <- readMVar stVar
-          res <- handleMessage st frame
-          case res of
-            Left _ -> sendAll conn (BS.pack [])
-            Right st' -> do
-              _ <- swapMVar stVar st'
-              sendAll conn (BS.pack [])
-          close conn
+      let loop = do
+            eframe <- recvFrame conn (cfgMaxFrame cfg)
+            case eframe of
+              Left _ -> close conn
+              Right frame -> do
+                _ <- modifyMVar stVar $ \st -> do
+                  res <- handleMessage st frame
+                  case res of
+                    Left _ -> sendAll conn (BS.pack []) >> pure (st, ())
+                    Right st' -> sendAll conn (BS.pack []) >> pure (st', ())
+                loop
+      loop
 
 splitHostPort :: String -> (String, String)
 splitHostPort s =

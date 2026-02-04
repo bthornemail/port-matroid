@@ -2,7 +2,8 @@ module Main (main) where
 
 import Control.Exception (bracket)
 import Network.Socket
-import Network.Socket.ByteString (sendAll, recv)
+import Network.Socket.ByteString (recv)
+import Runtime.Net.Framing (sendFrame, recvFrame)
 import qualified Data.ByteString.Char8 as C8
 import System.Environment (getArgs)
 import System.Exit (exitFailure)
@@ -13,9 +14,11 @@ main = do
   let (sockPath, cmd) = parseArgs args
   when (null cmd) (usage >> exitFailure)
   bracket (connectUnix sockPath) close $ \sock -> do
-    sendAll sock (C8.pack (unwords cmd ++ "\n"))
-    resp <- recv sock 65536
-    C8.putStr resp
+    sendFrame sock (C8.pack (unwords cmd ++ "\n"))
+    eres <- recvFrame sock 1048576
+    case eres of
+      Left _ -> exitFailure
+      Right resp -> C8.putStr resp
 
 parseArgs :: [String] -> (FilePath, [String])
 parseArgs args =

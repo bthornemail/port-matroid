@@ -17,6 +17,7 @@ import qualified Data.ByteString as BS
 import System.Environment (getArgs)
 import System.Exit (exitFailure)
 import System.FilePath ((</>))
+import System.Posix.Signals (installHandler, Handler(Catch), sigTERM, sigINT)
 
 main :: IO ()
 main = do
@@ -29,20 +30,26 @@ main = do
   stVar <- newMVar node
   _ <- forkIO (runServer cfg stVar)
   _ <- forkIO (runControl cfg stVar)
+  _ <- installHandler sigTERM (Catch (shutdown cfg)) Nothing
+  _ <- installHandler sigINT (Catch (shutdown cfg)) Nothing
   loop cfg stVar
 
 loop :: Config -> MVar NodeState -> IO ()
 loop cfg stVar = do
   threadDelay (cfgTickMs cfg * 1000)
-  st <- readMVar stVar
-  res <- tickOnce st
-  case res of
-    Left err -> do
-      logMsg cfg Error ("tick failed: " ++ err)
-      exitFailure
-    Right st' -> do
-      _ <- swapMVar stVar st'
-      loop cfg stVar
+  _ <- modifyMVar stVar $ \st -> do
+    res <- tickOnce st
+    case res of
+      Left err -> do
+        logMsg cfg Error ("tick failed: " ++ err)
+        exitFailure
+      Right st' -> pure (st', ())
+  loop cfg stVar
+
+shutdown :: Config -> IO ()
+shutdown cfg = do
+  logMsg cfg Info "shutdown"
+  exitFailure
 
 configPath :: [String] -> FilePath
 configPath args =

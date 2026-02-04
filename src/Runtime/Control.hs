@@ -6,6 +6,7 @@ import Runtime.Config
 import Runtime.Log (logMsg)
 import Runtime.Node
 import Runtime.Store (writeSnapshot)
+import Runtime.Net.Framing
 
 import Snapshot.Types (Snapshot)
 import Snapshot.Routing.Types (routingEpoch)
@@ -16,7 +17,6 @@ import Control.Concurrent.MVar
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as C8
 import Network.Socket
-import Network.Socket.ByteString (recv, sendAll)
 import System.Directory (removeFile, doesFileExist)
 
 runControl :: Config -> MVar NodeState -> IO ()
@@ -38,12 +38,12 @@ runControl cfg stVar = do
       acceptLoop sock
 
     handleConn conn = do
-      msg <- recv conn 4096
-      if BS.null msg
-        then close conn
-        else do
+      eframe <- recvFrame conn (cfgMaxFrame cfg)
+      case eframe of
+        Left _ -> close conn
+        Right msg -> do
           resp <- handleCmd (C8.unpack (C8.takeWhile (/= '\n') msg))
-          sendAll conn (C8.pack resp)
+          sendFrame conn (C8.pack resp)
           close conn
 
     handleCmd cmd = do
@@ -51,9 +51,10 @@ runControl cfg stVar = do
       case words cmd of
         ["status"] ->
           pure ("ok epoch=" ++ show (routingEpoch (nodeRouting st)) ++ "\n")
-        ["dump-snapshot", _path] -> do
-          _ <- writeSnapshot (cfgDataDir cfg) (nodeSnapshot st)
-          pure "ok\n"
+        ["dump-snapshot", path] -> do
+          case encodeSnapshotBytes (nodeSnapshot st) of
+            Left err -> pure ("error " ++ err ++ "\n")
+            Right bytes -> BS.writeFile path bytes >> pure "ok\n"
         ["dump-snapshot"] -> do
           case encodeSnapshotBytes (nodeSnapshot st) of
             Left err -> pure ("error " ++ err ++ "\n")
