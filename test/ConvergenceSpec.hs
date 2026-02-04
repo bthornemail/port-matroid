@@ -2,6 +2,7 @@ module Main (main) where
 
 import Snapshot.Decode (decodeSnapshot)
 import Snapshot.Encode (encodeSnapshot)
+import Snapshot.Types (Snapshot)
 import Snapshot.Scheduler.Decode (decodeWorkSet)
 import Snapshot.Scheduler.Core (scheduleStep)
 import Snapshot.Scheduler.Types
@@ -58,6 +59,7 @@ main = do
                 else do
                   runCollisionCase
                   runDuplicateOkCase
+                  runMultiShardCase batchExpected beforeSnap afterBytes
                   putStrLn "OK"
 
 runCollisionCase :: IO ()
@@ -90,6 +92,39 @@ runDuplicateOkCase = do
       if length ws /= 1
         then error "duplicate ok union wrong size"
         else pure ()
+
+runMultiShardCase :: BS.ByteString -> Snapshot -> BS.ByteString -> IO ()
+runMultiShardCase batchExpected beforeSnap afterBytes = do
+  waBytes <- BS.readFile "test/convergence/multishard-a.workset"
+  wbBytes <- BS.readFile "test/convergence/multishard-b.workset"
+  wa <- case decodeWorkSet waBytes of
+    Left err -> error ("decode multishard-a failed: " ++ show err)
+    Right w -> pure w
+  wb <- case decodeWorkSet wbBytes of
+    Left err -> error ("decode multishard-b failed: " ++ show err)
+    Right w -> pure w
+  unioned <- case canonicalUnion wa wb of
+    Left msg -> error ("multishard union failed: " ++ msg)
+    Right w -> pure w
+  (batchBytes, _) <- case scheduleStep defaultParams defaultState unioned of
+    Left err -> error ("multishard scheduleStep failed: " ++ show err)
+    Right v -> pure v
+  if batchBytes /= batchExpected
+    then error "multishard batch bytes mismatch"
+    else do
+      instrs <- case decodeStream batchBytes of
+        Left err -> error ("multishard decodeStream failed: " ++ show err)
+        Right xs -> pure xs
+      let auth = AuthorityMask 0xF
+      case applyInstructions beforeSnap auth instrs of
+        (Halt r, _) -> error ("multishard applyInstructions halted: " ++ show r)
+        (Next, snap') ->
+          case encodeSnapshot snap' of
+            Left err -> error ("multishard encodeSnapshot failed: " ++ show err)
+            Right bytes ->
+              if bytes /= afterBytes
+                then error "multishard after snapshot mismatch"
+                else pure ()
 
 canonicalUnion :: [WorkItem] -> [WorkItem] -> Either String [WorkItem]
 canonicalUnion a b =
