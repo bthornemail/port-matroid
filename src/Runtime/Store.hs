@@ -16,6 +16,8 @@ module Runtime.Store
   , currentWalPath
   , manifestGeneration
   , walEntryCount
+  , ensureWalHeader
+  , verifyWalHeader
   ) where
 
 import Snapshot.Decode (decodeSnapshot)
@@ -34,6 +36,7 @@ import Control.Monad (foldM)
 import Control.Exception (try, SomeException, bracket)
 import System.IO.Error (catchIOError)
 import Data.Char (isSpace)
+import System.IO (withBinaryFile, IOMode(ReadMode))
 import System.Posix.IO (openFd, defaultFileFlags, OpenMode(..), closeFd, fsync)
 import System.Posix.Process (getProcessID)
 import Data.Bits (xor, (.&.), shiftR)
@@ -182,7 +185,7 @@ replayWal dir snap = do
   if not exists
     then pure (Right snap)
     else do
-      h <- ensureWalHeader path
+      h <- verifyWalHeader path
       case h of
         Left err -> pure (Left err)
         Right () -> do
@@ -295,14 +298,33 @@ ensureWalHeader :: FilePath -> IO (Either String ())
 ensureWalHeader path = do
   exists <- doesFileExist path
   if not exists
-    then BS.writeFile path walHeader >> pure (Right ())
+    then do
+      BS.writeFile path walHeader
+      _ <- fsyncPath path
+      fsyncDir (takeDirectory path)
+      pure (Right ())
     else do
       sz <- getFileSize path
       if sz < fromIntegral (BS.length walHeader)
         then pure (Left "wal header missing")
         else do
-          header <- BS.readFile path
-          if BS.take (BS.length walHeader) header /= walHeader
+          header <- withBinaryFile path ReadMode $ \hnd -> BS.hGet hnd (BS.length walHeader)
+          if header /= walHeader
+            then pure (Left "wal header mismatch")
+            else pure (Right ())
+
+verifyWalHeader :: FilePath -> IO (Either String ())
+verifyWalHeader path = do
+  exists <- doesFileExist path
+  if not exists
+    then pure (Left "wal missing")
+    else do
+      sz <- getFileSize path
+      if sz < fromIntegral (BS.length walHeader)
+        then pure (Left "wal header missing")
+        else do
+          header <- withBinaryFile path ReadMode $ \hnd -> BS.hGet hnd (BS.length walHeader)
+          if header /= walHeader
             then pure (Left "wal header mismatch")
             else pure (Right ())
 
@@ -313,7 +335,7 @@ walEntryCount dir = do
   if not exists
     then pure (Right 0)
     else do
-      h <- ensureWalHeader path
+      h <- verifyWalHeader path
       case h of
         Left err -> pure (Left err)
         Right () -> do
