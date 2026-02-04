@@ -32,12 +32,12 @@ import Runtime.Store
   , replayWalWith
   , loadSnapshot
   , currentWalPath
-  , walHeader
   , readManifest
   , writeManifest
   , Manifest(..)
   , manifestPath
   , writeBlobAtomic
+  , ensureWalHeader
   )
 import qualified Snapshot.Encode
 
@@ -176,7 +176,7 @@ simulateRotationCrash dir oldSnap newSnap = do
     Left _ -> pure (oldSnap, oldSnap)
     Right bytes -> do
       _ <- writeBlobAtomic snapFile bytes
-      _ <- writeBlobAtomic walFile walHeader
+      _ <- ensureWalHeader walFile
       -- Recovery should still use old manifest
       recoveredOld <- loadSnapshot dir >>= \res -> case res of
         Left _ -> pure oldSnap
