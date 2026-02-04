@@ -22,6 +22,8 @@ data Config = Config
   , cfgControl :: FilePath
   , cfgMaxFrame :: Int
   , cfgTickMs :: Int
+  , cfgIdleMs :: Int
+  , cfgConnLimit :: Int
   , cfgLogFormat :: LogFormat
   , cfgLogLevel :: LogLevel
   , cfgReadonly :: Bool
@@ -34,6 +36,8 @@ defaultConfig = Config
   , cfgControl = "/run/port-matroid/control.sock"
   , cfgMaxFrame = 1048576
   , cfgTickMs = 250
+  , cfgIdleMs = 5000
+  , cfgConnLimit = 256
   , cfgLogFormat = LogJson
   , cfgLogLevel = Info
   , cfgReadonly = False
@@ -69,6 +73,8 @@ loadConfig path = do
         "control_socket" -> Right cfg { cfgControl = v }
         "max_frame_bytes" -> readInt v >>= \n -> Right cfg { cfgMaxFrame = n }
         "tick_ms" -> readInt v >>= \n -> Right cfg { cfgTickMs = n }
+        "idle_ms" -> readInt v >>= \n -> Right cfg { cfgIdleMs = n }
+        "conn_limit" -> readInt v >>= \n -> Right cfg { cfgConnLimit = n }
         "log_format" -> parseFormat v >>= \f -> Right cfg { cfgLogFormat = f }
         "log_level" -> parseLevel v >>= \l -> Right cfg { cfgLogLevel = l }
         "readonly" -> parseBool v >>= \b -> Right cfg { cfgReadonly = b }

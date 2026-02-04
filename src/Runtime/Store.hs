@@ -5,8 +5,15 @@ module Runtime.Store
   , replayWal
   , resetWal
   , rotateSnapshotAndWal
+  , writeBlobAtomic
   , walPath
   , snapshotPath
+  , Manifest(..)
+  , manifestPath
+  , readManifest
+  , writeManifest
+  , currentSnapshotPath
+  , currentWalPath
   ) where
 
 import Snapshot.Decode (decodeSnapshot)
@@ -25,6 +32,9 @@ import Control.Monad (foldM)
 import Control.Exception (try, SomeException, bracket)
 import System.Posix.IO (openFd, defaultFileFlags, OpenMode(..), closeFd, fsync)
 import System.Posix.Process (getProcessID)
+import Data.Time.Clock.POSIX (getPOSIXTime)
+import Data.Bits (xor, (.&.), shiftR)
+import qualified Data.List as List
 
 snapshotPath :: FilePath -> FilePath
 snapshotPath dir = dir </> "snapshots" </> "latest.csnp"
@@ -32,9 +42,56 @@ snapshotPath dir = dir </> "snapshots" </> "latest.csnp"
 walPath :: FilePath -> FilePath
 walPath dir = dir </> "wal" </> "current.wal"
 
+data Manifest = Manifest
+  { mfSnapshot :: FilePath
+  , mfWal :: FilePath
+  } deriving (Eq, Show)
+
+manifestPath :: FilePath -> FilePath
+manifestPath dir = dir </> "manifest"
+
+readManifest :: FilePath -> IO (Either String Manifest)
+readManifest dir = do
+  let path = manifestPath dir
+  exists <- doesFileExist path
+  if not exists
+    then pure (Left "manifest missing")
+    else do
+      bytes <- BS.readFile path
+      let ls = lines (map (toEnum . fromEnum) (BS.unpack bytes))
+      case parseLines ls of
+        Left err -> pure (Left err)
+        Right m -> pure (Right m)
+  where
+    parseLines ls =
+      case (lookup "snapshot" kvs, lookup "wal" kvs) of
+        (Just s, Just w) -> Right (Manifest s w)
+        _ -> Left "manifest incomplete"
+      where
+        kvs = [ let (k, v') = break (== '=') l in (k, drop 1 v') | l <- ls, '=' `elem` l ]
+
+writeManifest :: FilePath -> Manifest -> IO (Either String ())
+writeManifest dir mf = do
+  let payload = "snapshot=" ++ mfSnapshot mf ++ "\nwal=" ++ mfWal mf ++ "\n"
+  atomicWriteFile (manifestPath dir) (BS.pack (map (toEnum . fromEnum) payload))
+
+currentSnapshotPath :: FilePath -> IO FilePath
+currentSnapshotPath dir = do
+  m <- readManifest dir
+  case m of
+    Right mf -> pure (mfSnapshot mf)
+    Left _ -> pure (snapshotPath dir)
+
+currentWalPath :: FilePath -> IO FilePath
+currentWalPath dir = do
+  m <- readManifest dir
+  case m of
+    Right mf -> pure (mfWal mf)
+    Left _ -> pure (walPath dir)
+
 loadSnapshot :: FilePath -> IO (Either String Snapshot)
 loadSnapshot dir = do
-  let path = snapshotPath dir
+  path <- currentSnapshotPath dir
   exists <- doesFileExist path
   if not exists
     then pure (Left "snapshot missing")
@@ -53,9 +110,11 @@ writeSnapshot dir snap = do
 appendWal :: FilePath -> BS.ByteString -> IO (Either String ())
 appendWal dir payload = do
   createDirectoryIfMissing True (dir </> "wal")
-  let path = walPath dir
+  path <- currentWalPath dir
+  let crc = crc32 payload
   let entry = BL.toStrict $ runPut $ do
         putWord32le (fromIntegral (BS.length payload))
+        putWord32le crc
         putByteString payload
   BS.appendFile path entry
   _ <- fsyncPath path
@@ -64,7 +123,8 @@ appendWal dir payload = do
 resetWal :: FilePath -> IO (Either String ())
 resetWal dir = do
   createDirectoryIfMissing True (dir </> "wal")
-  atomicWriteFile (walPath dir) BS.empty
+  path <- currentWalPath dir
+  atomicWriteFile path BS.empty
 
 rotateSnapshotAndWal :: FilePath -> Snapshot -> IO (Either String ())
 rotateSnapshotAndWal dir snap = do
@@ -73,18 +133,26 @@ rotateSnapshotAndWal dir snap = do
   case encodeSnapshot snap of
     Left err -> pure (Left (show err))
     Right bytes -> do
-      r1 <- atomicWriteFile (snapshotPath dir) bytes
+      gen <- newGeneration
+      let snapFile = dir </> "snapshots" </> ("snap." ++ gen ++ ".csnp")
+      let walFile = dir </> "wal" </> ("wal." ++ gen ++ ".wal")
+      r1 <- atomicWriteFile snapFile bytes
       case r1 of
         Left err -> pure (Left ("snapshot rotate failed: " ++ err))
         Right () -> do
-          r2 <- atomicWriteFile (walPath dir) BS.empty
+          r2 <- atomicWriteFile walFile BS.empty
           case r2 of
             Left err -> pure (Left ("wal reset failed: " ++ err))
-            Right () -> pure (Right ())
+            Right () -> do
+              let mf = Manifest { mfSnapshot = snapFile, mfWal = walFile }
+              r3 <- writeManifest dir mf
+              case r3 of
+                Left err -> pure (Left ("manifest write failed: " ++ err))
+                Right () -> pure (Right ())
 
 replayWal :: FilePath -> Snapshot -> IO (Either String Snapshot)
 replayWal dir snap = do
-  let path = walPath dir
+  path <- currentWalPath dir
   exists <- doesFileExist path
   if not exists
     then pure (Right snap)
@@ -103,7 +171,11 @@ replayWal dir snap = do
         then pure []
         else do
           len <- getWord32le
+          crc <- getWord32le
           payload <- getByteString (fromIntegral len)
+          if crc /= crc32 payload
+            then fail "wal checksum mismatch"
+            else pure ()
           rest <- getEntries
           pure (payload : rest)
 
@@ -138,3 +210,22 @@ fsyncPath path =
 fsyncDir :: FilePath -> IO ()
 fsyncDir dir =
   bracket (openFd dir ReadOnly Nothing defaultFileFlags) closeFd fsync
+
+writeBlobAtomic :: FilePath -> BS.ByteString -> IO (Either String ())
+writeBlobAtomic = atomicWriteFile
+
+newGeneration :: IO String
+newGeneration = do
+  pid <- getProcessID
+  t <- getPOSIXTime
+  pure (show pid ++ "." ++ filter (/= '.') (show t))
+
+crc32 :: BS.ByteString -> Word32
+crc32 bs = BS.foldl' step 0xFFFFFFFF bs `xor` 0xFFFFFFFF
+  where
+    step crc b =
+      let idx = fromIntegral ((crc `xor` fromIntegral b) .&. 0xFF)
+      in (crc `shiftR` 8) `xor` table !! idx
+
+    table = map mk [0..255]
+    mk i = List.foldl' (\c _ -> if c .&. 1 == 1 then 0xEDB88320 `xor` (c `shiftR` 1) else c `shiftR` 1) (fromIntegral i) [1..8]

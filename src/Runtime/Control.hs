@@ -5,7 +5,7 @@ module Runtime.Control
 import Runtime.Config
 import Runtime.Log (logMsg)
 import Runtime.Node
-import Runtime.Store (writeSnapshot)
+import Runtime.Store (writeSnapshot, writeBlobAtomic)
 import Runtime.Net.Framing
 
 import Snapshot.Types (Snapshot)
@@ -56,7 +56,11 @@ runControl cfg stVar = do
         ["dump-snapshot", path] -> do
           case encodeSnapshotBytes (nodeSnapshot st) of
             Left err -> pure (C8.pack ("error " ++ err ++ "\n"))
-            Right bytes -> BS.writeFile path bytes >> pure (C8.pack "ok\n")
+            Right bytes -> do
+              r <- writeBlobAtomic path bytes
+              case r of
+                Left e -> pure (C8.pack ("error " ++ e ++ "\n"))
+                Right () -> pure (C8.pack "ok\n")
         ["dump-snapshot"] -> do
           case encodeSnapshotBytes (nodeSnapshot st) of
             Left err -> pure (C8.pack ("error " ++ err ++ "\n"))

@@ -18,6 +18,7 @@ import System.Environment (getArgs)
 import System.Exit (exitFailure, exitSuccess)
 import System.FilePath ((</>))
 import System.Posix.Signals (installHandler, Handler(Catch), sigTERM, sigINT)
+import Network.Socket (Socket, close)
 import qualified Runtime.Store
 
 main :: IO ()
@@ -30,18 +31,19 @@ main = do
   let node = initNode cfg rctx snap'
   stVar <- newMVar node
   shutdownFlag <- newMVar False
-  _ <- forkIO (runServer cfg stVar)
+  sockVar <- newMVar Nothing
+  _ <- forkIO (runServer cfg stVar sockVar)
   _ <- forkIO (runControl cfg stVar)
   _ <- installHandler sigTERM (Catch (signalShutdown shutdownFlag)) Nothing
   _ <- installHandler sigINT (Catch (signalShutdown shutdownFlag)) Nothing
-  loop cfg stVar shutdownFlag
+  loop cfg stVar shutdownFlag sockVar
 
 loop :: Config -> MVar NodeState -> IO ()
-loop cfg stVar shutdownFlag = do
+loop cfg stVar shutdownFlag sockVar = do
   threadDelay (cfgTickMs cfg * 1000)
   stop <- readMVar shutdownFlag
   if stop
-    then gracefulShutdown cfg stVar
+    then gracefulShutdown cfg stVar sockVar
     else do
       res <- modifyMVar stVar $ \st -> do
         r <- tickOnce st
@@ -51,16 +53,20 @@ loop cfg stVar shutdownFlag = do
       case res of
         Left err -> do
           logMsg cfg Error ("tick failed: " ++ err)
-          gracefulShutdown cfg stVar
-        Right () -> loop cfg stVar shutdownFlag
+          gracefulShutdown cfg stVar sockVar
+        Right () -> loop cfg stVar shutdownFlag sockVar
 
 signalShutdown :: MVar Bool -> IO ()
 signalShutdown flag = do
   _ <- swapMVar flag True
   pure ()
 
-gracefulShutdown :: Config -> MVar NodeState -> IO ()
-gracefulShutdown cfg stVar = do
+gracefulShutdown :: Config -> MVar NodeState -> MVar (Maybe Socket) -> IO ()
+gracefulShutdown cfg stVar sockVar = do
+  msock <- readMVar sockVar
+  case msock of
+    Nothing -> pure ()
+    Just s -> close s
   st <- readMVar stVar
   res <- Runtime.Store.rotateSnapshotAndWal (cfgDataDir cfg) (nodeSnapshot st)
   case res of

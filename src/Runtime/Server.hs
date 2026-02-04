@@ -15,12 +15,13 @@ import qualified Data.ByteString as BS
 import Network.Socket
 import Network.Socket.ByteString (sendAll)
 
-runServer :: Config -> MVar NodeState -> IO ()
-runServer cfg stVar = do
+runServer :: Config -> MVar NodeState -> MVar (Maybe Socket) -> IO ()
+runServer cfg stVar sockVar = do
   addr <- resolve (cfgListen cfg)
   sock <- open addr
   logMsg cfg Info ("listening on " ++ cfgListen cfg)
-  sem <- newQSem 256
+  _ <- swapMVar sockVar (Just sock)
+  sem <- newQSem (cfgConnLimit cfg)
   acceptLoop sem sock
   where
     resolve addr = do
@@ -42,6 +43,7 @@ runServer cfg stVar = do
       acceptLoop sem sock
 
     handleConn conn = do
+      setSocketOption conn RecvTimeOut (cfgIdleMs cfg * 1000)
       let loop = do
             eframe <- recvFrame conn (cfgMaxFrame cfg)
             case eframe of
