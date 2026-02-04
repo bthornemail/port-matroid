@@ -28,6 +28,9 @@ An implementation is compliant if it passes all of the following suites:
 - `cabal test routing-error-golden`
 - `cabal test routing-bad`
 
+6. Convergence law
+- `cabal test convergence`
+
 Frozen Consensus Specifications (v1)
 
 The following documents define consensus-critical behavior.

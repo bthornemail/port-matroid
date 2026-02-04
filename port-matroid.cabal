@@ -219,3 +219,14 @@ test-suite routing-bad
       port-matroid,
       bytestring
   default-language: Haskell2010
+
+test-suite convergence
+  type:             exitcode-stdio-1.0
+  main-is:          ConvergenceSpec.hs
+  hs-source-dirs:   test
+  build-depends:
+      base,
+      port-matroid,
+      bytestring,
+      containers
+  default-language: Haskell2010
