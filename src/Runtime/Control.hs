@@ -5,7 +5,7 @@ module Runtime.Control
 import Runtime.Config
 import Runtime.Log (logMsg)
 import Runtime.Node
-import Runtime.Store (writeSnapshot, writeBlobAtomic)
+import Runtime.Store (writeBlobAtomic)
 import Runtime.Net.Framing
 
 import Snapshot.Types (Snapshot)
