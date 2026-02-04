@@ -1,0 +1,72 @@
+.Dd February 3, 2026
+.Dt PORT-MATROIDD 1
+.Os
+.Sh NAME
+.Nm port-matroidd
+.Nd deterministic scheduler network daemon
+.Sh SYNOPSIS
+.Nm
+.Op Fl -config Ar path
+.Op Fl -data-dir Ar path
+.Op Fl -listen Ar addr
+.Op Fl -control Ar path
+.Op Fl -max-frame Ar bytes
+.Op Fl -tick-ms Ar ms
+.Op Fl -log-format Ar fmt
+.Op Fl -log-level Ar level
+.Op Fl -readonly
+.Sh DESCRIPTION
+.Nm runs the consensus-critical scheduler network.
+It validates routing context strictly, enforces replica authority,
+canonicalizes all work, and applies scheduler batches deterministically.
+.Pp
+If any consensus validation fails, .Nm fails closed and halts.
+.Sh OPTIONS
+.Bl -tag -width Ds
+.It Fl -config Ar path
+Load configuration from .Ar path .
+Default: .Pa /etc/port-matroid/port-matroid.conf .
+.It Fl -data-dir Ar path
+State directory holding snapshots and WAL.
+Default: .Pa /var/lib/port-matroid .
+.It Fl -listen Ar addr
+Network listen address, e.g. .Dq 0.0.0.0:7000 or .Dq [::]:7000 .
+.It Fl -control Ar path
+UNIX control socket path for .Xr port-matroidctl 1 .
+Default: .Pa /run/port-matroid/control.sock .
+.It Fl -max-frame Ar bytes
+Maximum accepted network frame size.
+Frames larger than this are rejected.
+Default: 1048576.
+.It Fl -tick-ms Ar ms
+Scheduler/network tick interval in milliseconds.
+Default: 250.
+.It Fl -log-format Ar fmt
+Log format: .Dq text or .Dq json .
+Default: json.
+.It Fl -log-level Ar level
+Log level: .Dq debug , .Dq info , .Dq warn , .Dq error .
+Default: info.
+.It Fl -readonly
+Disable all state mutations (no WAL appends, no snapshot writes).
+Useful for audits.
+.El
+.Sh FILES
+.Bl -tag -width Ds
+.It Pa /etc/port-matroid/port-matroid.conf
+Default configuration.
+.It Pa /var/lib/port-matroid/snapshots/
+Periodic snapshots.
+.It Pa /var/lib/port-matroid/wal/
+Write-ahead log segments.
+.It Pa /run/port-matroid/control.sock
+Control socket.
+.El
+.Sh EXIT STATUS
+.Ex -std
+.Sh SEE ALSO
+.Xr port-matroidctl 1 ,
+.Xr port-matroid.conf 5
+.Sh NOTES
+Consensus-critical behavior is defined by frozen specifications in the source tree.
+Any divergence is a protocol fork.

@@ -1,0 +1,44 @@
+.Dd February 3, 2026
+.Dt PORT-MATROID.CONF 5
+.Os
+.Sh NAME
+.Nm port-matroid.conf
+.Nd configuration file for port-matroidd
+.Sh DESCRIPTION
+.Nm is a line-oriented key=value configuration file.
+Blank lines and lines beginning with .Sq # are ignored.
+Unknown keys are rejected.
+.Sh KEYS
+.Bl -tag -width Ds
+.It Ic data_dir
+State directory (snapshots and WAL).
+.It Ic listen
+Network listen address, e.g. .Dq 0.0.0.0:7000 .
+.It Ic control_socket
+UNIX control socket path.
+.It Ic max_frame_bytes
+Maximum accepted network frame size.
+.It Ic tick_ms
+Tick interval in milliseconds.
+.It Ic log_format
+Either .Dq text or .Dq json .
+.It Ic log_level
+One of .Dq debug , .Dq info , .Dq warn , .Dq error .
+.It Ic readonly
+Boolean: .Dq true or .Dq false .
+.El
+.Sh EXAMPLES
+.Bd -literal -offset indent
+# /etc/port-matroid/port-matroid.conf
+data_dir=/var/lib/port-matroid
+listen=0.0.0.0:7000
+control_socket=/run/port-matroid/control.sock
+max_frame_bytes=1048576
+tick_ms=250
+log_format=json
+log_level=info
+readonly=false
+.Ed
+.Sh SEE ALSO
+.Xr port-matroidd 1 ,
+.Xr port-matroidctl 1

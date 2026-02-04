@@ -1,0 +1,45 @@
+.Dd February 3, 2026
+.Dt PORT-MATROIDCTL 1
+.Os
+.Sh NAME
+.Nm port-matroidctl
+.Nd control and inspect a port-matroidd node
+.Sh SYNOPSIS
+.Nm
+.Op Fl -control Ar path
+.Op Fl -timeout-ms Ar ms
+.Ar command
+.Op Ar args ...
+.Sh DESCRIPTION
+.Nm connects to the local control socket exposed by .Xr port-matroidd 1
+and issues inspection or administration commands.
+.Sh OPTIONS
+.Bl -tag -width Ds
+.It Fl -control Ar path
+Control socket path.
+Default: .Pa /run/port-matroid/control.sock .
+.It Fl -timeout-ms Ar ms
+Request timeout in milliseconds.
+Default: 2000.
+.El
+.Sh COMMANDS
+.Bl -tag -width Ds
+.It Cm status
+Print node status, epoch, routing digest, and snapshot height.
+.It Cm peers
+List known peers and replica membership summary.
+.It Cm dump-snapshot Op Ar path
+Write the current snapshot bytes to .Ar path or stdout if omitted.
+.It Cm dump-wal Op Ar n
+Dump last .Ar n WAL entries (for audit).
+.It Cm validate Ar file
+Validate and decode a message or fixture file.
+Exit non-zero on failure.
+.It Cm replay Ar trace
+Replay a trace file against the pure state machine and report divergence.
+.El
+.Sh EXIT STATUS
+.Ex -std
+.Sh SEE ALSO
+.Xr port-matroidd 1 ,
+.Xr port-matroid.conf 5

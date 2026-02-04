@@ -28,6 +28,13 @@ library
       Snapshot.Scheduler.Network.Epoch
       Snapshot.Scheduler.Network.State
       Snapshot.Scheduler.Network.Sim
+      Runtime.Config
+      Runtime.Log
+      Runtime.Net.Framing
+      Runtime.Store
+      Runtime.Node
+      Runtime.Server
+      Runtime.Control
       Snapshot.Routing.Types
       Snapshot.Routing.Encode
       Snapshot.Routing.Decode
@@ -39,6 +46,10 @@ library
       containers,
       binary,
       cryptohash-sha256,
+      directory,
+      filepath,
+      network,
+      time,
       text,
       transformers,
       unicode-transforms == 0.4.0.1
@@ -50,6 +61,39 @@ executable snapshot-verify
   build-depends:
       base,
       bytestring,
+      port-matroid
+  default-language: Haskell2010
+
+executable port-matroidd
+  main-is:          Main.hs
+  hs-source-dirs:   app/port-matroidd
+  build-depends:
+      base,
+      bytestring,
+      containers,
+      directory,
+      filepath,
+      network,
+      time,
+      port-matroid
+  default-language: Haskell2010
+
+executable port-matroidctl
+  main-is:          Main.hs
+  hs-source-dirs:   app/port-matroidctl
+  build-depends:
+      base,
+      bytestring,
+      network
+  default-language: Haskell2010
+
+executable port-matroid-tool
+  main-is:          Main.hs
+  hs-source-dirs:   app/port-matroid-tool
+  build-depends:
+      base,
+      bytestring,
+      filepath,
       port-matroid
   default-language: Haskell2010
 
