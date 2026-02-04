@@ -234,25 +234,27 @@ parseEntries bytes truncateLast =
       total = BS.length bytes
   in if total < hdrLen
        then Left "wal header missing"
-       else
-         let loop off acc =
-               if off == total
-                 then Right (reverse acc)
-                 else if off + 8 > total
-                   then if truncateLast then Right (reverse acc) else Left "wal trailing partial entry"
-                   else
-                     let len = get32 off
-                         crc = get32 (off + 4)
-                         start = off + 8
-                         end = start + fromIntegral len
-                     in if end > total
-                          then if truncateLast then Right (reverse acc) else Left "wal trailing partial entry"
-                          else
-                            let payload = BS.take (fromIntegral len) (BS.drop start bytes)
-                            in if crc /= crc32 payload
-                                 then Left "wal checksum mismatch"
-                                 else loop end (payload:acc)
-         in loop hdrLen []
+       else if BS.take hdrLen bytes /= walHeader
+         then Left "wal header mismatch"
+         else
+           let loop off acc =
+                 if off == total
+                   then Right (reverse acc)
+                   else if off + 8 > total
+                     then if truncateLast then Right (reverse acc) else Left ("wal trailing partial entry at " ++ show off)
+                     else
+                       let len = get32 off
+                           crc = get32 (off + 4)
+                           start = off + 8
+                           end = start + fromIntegral len
+                       in if end > total
+                            then if truncateLast then Right (reverse acc) else Left ("wal trailing partial entry at " ++ show off)
+                            else
+                              let payload = BS.take (fromIntegral len) (BS.drop start bytes)
+                              in if crc /= crc32 payload
+                                   then Left ("wal checksum mismatch at " ++ show off)
+                                   else loop end (payload:acc)
+           in loop hdrLen []
   where
     get32 i =
       let b0 = fromIntegral (BS.index bytes i) :: Word32
@@ -327,14 +329,14 @@ findHighestWal dir = do
     then pure (walPath dir)
     else pure (dir </> "wal" </> ("wal." ++ show g ++ ".wal"))
 
+walVersion :: Word16
+walVersion = 1
+
 walHeader :: BS.ByteString
 walHeader =
   let magic = BS.pack [0x50,0x4d,0x57,0x41,0x4c] -- "PMWAL"
-      ver = BL.toStrict (runPut (putWord16le 1))
+      ver = BL.toStrict (runPut (putWord16le walVersion))
   in magic <> ver
-
-walVersion :: Word16
-walVersion = 1
 
 ensureWalHeader :: FilePath -> IO (Either String ())
 ensureWalHeader path = do
