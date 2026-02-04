@@ -266,3 +266,13 @@ test-suite network-epoch
       port-matroid,
       bytestring
   default-language: Haskell2010
+
+test-suite network-bad
+  type:             exitcode-stdio-1.0
+  main-is:          NetworkBadSpec.hs
+  hs-source-dirs:   test
+  build-depends:
+      base,
+      port-matroid,
+      bytestring
+  default-language: Haskell2010

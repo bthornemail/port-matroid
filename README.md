@@ -40,6 +40,9 @@ An implementation is compliant if it passes all of the following suites:
 9. Network epoch law
 - `cabal test network-epoch`
 
+10. Network bad corpus
+- `cabal test network-bad`
+
 Frozen Consensus Specifications (v1)
 
 The following documents define consensus-critical behavior.
