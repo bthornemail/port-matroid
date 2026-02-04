@@ -1,0 +1,29 @@
+.Dd February 3, 2026
+.Dt PORT-MATROID-TOOL 1
+.Os
+.Sh NAME
+.Nm port-matroid-tool
+.Nd offline validation and audit utilities for port-matroid
+.Sh SYNOPSIS
+.Nm
+.Cm validate Ar file
+.Nm
+.Cm audit Ar data-dir
+.Sh DESCRIPTION
+.Nm provides offline utilities for validating and auditing port-matroid data.
+.Sh COMMANDS
+.Bl -tag -width Ds
+.It Cm validate Ar file
+Validate and decode a snapshot (.csnp), workset (.workset), routing context (.ctx),
+or network message (.msg). Exits non-zero on failure.
+.It Cm audit Ar data-dir
+Read the current snapshot and WAL from .Ar data-dir, replay WAL deterministically,
+and report integrity status.
+Output includes generation, WAL entry count, and WAL format version.
+.El
+.Sh EXIT STATUS
+.Ex -std
+.Sh SEE ALSO
+.Xr port-matroidd 1 ,
+.Xr port-matroidctl 1 ,
+.Xr port-matroid.conf 5

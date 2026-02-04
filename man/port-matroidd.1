@@ -41,6 +41,10 @@ Default: 1048576.
 .It Fl -tick-ms Ar ms
 Scheduler/network tick interval in milliseconds.
 Default: 250.
+.It Fl -wal-truncate
+Allow truncation of a trailing partial WAL entry during replay.
+Intended only for power-loss partial writes.
+Default: disabled.
 .It Fl -log-format Ar fmt
 Log format: .Dq text or .Dq json .
 Default: json.
