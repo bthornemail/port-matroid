@@ -20,6 +20,10 @@ UNIX control socket path.
 Maximum accepted network frame size.
 .It Ic tick_ms
 Tick interval in milliseconds.
+.It Ic idle_ms
+Idle connection timeout in milliseconds.
+.It Ic conn_limit
+Maximum concurrent network connections.
 .It Ic log_format
 Either .Dq text or .Dq json .
 .It Ic log_level
@@ -35,6 +39,8 @@ listen=0.0.0.0:7000
 control_socket=/run/port-matroid/control.sock
 max_frame_bytes=1048576
 tick_ms=250
+idle_ms=5000
+conn_limit=256
 log_format=json
 log_level=info
 readonly=false
