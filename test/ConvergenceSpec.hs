@@ -55,7 +55,23 @@ main = do
             Right bytes ->
               if bytes /= afterBytes
                 then error "after snapshot mismatch"
-                else putStrLn "OK"
+                else do
+                  runCollisionCase
+                  putStrLn "OK"
+
+runCollisionCase :: IO ()
+runCollisionCase = do
+  waBytes <- BS.readFile "test/convergence/collision-a.workset"
+  wbBytes <- BS.readFile "test/convergence/collision-b.workset"
+  wa <- case decodeWorkSet waBytes of
+    Left err -> error ("decode collision-a failed: " ++ show err)
+    Right w -> pure w
+  wb <- case decodeWorkSet wbBytes of
+    Left err -> error ("decode collision-b failed: " ++ show err)
+    Right w -> pure w
+  case canonicalUnion wa wb of
+    Left _ -> pure ()
+    Right _ -> error "collision union unexpectedly succeeded"
 
 canonicalUnion :: [WorkItem] -> [WorkItem] -> Either String [WorkItem]
 canonicalUnion a b =
