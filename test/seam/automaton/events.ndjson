@@ -1,0 +1,5 @@
+{"namespace":"ulp.trace.automaton.v0","authority":{"kind":"direct","basis":[]},"meta":{"writer":"automaton","epoch":1,"gen":1},"payload":{"op":"advance_tick","delta":1}}
+{"namespace":"ulp.trace.automaton.v0","authority":{"kind":"direct","basis":[]},"meta":{"writer":"automaton","epoch":1,"gen":1},"payload":{"op":"create_entity","eid":1,"etype":"node","owner_mask":15}}
+{"namespace":"ulp.trace.automaton.v0","authority":{"kind":"direct","basis":[]},"meta":{"writer":"automaton","epoch":1,"gen":1},"payload":{"op":"set_component_string","eid":1,"key":"name","value":"hello"}}
+{"namespace":"ulp.trace.automaton.v0","authority":{"kind":"direct","basis":[]},"meta":{"writer":"automaton","epoch":1,"gen":1},"payload":{"op":"remove_component","eid":1,"key":"name"}}
+{"namespace":"ulp.trace.automaton.v0","authority":{"kind":"direct","basis":[]},"meta":{"writer":"automaton","epoch":1,"gen":1},"payload":{"op":"delete_entity","eid":1}}

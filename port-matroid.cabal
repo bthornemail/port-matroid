@@ -99,6 +99,31 @@ executable port-matroid-tool
       base,
       bytestring,
       filepath,
+      aeson,
+      text,
+      binary,
+      containers,
+      directory,
+      cryptohash-sha256,
+      port-matroid
+  default-language: Haskell2010
+
+test-suite seam-producer
+  type:             exitcode-stdio-1.0
+  main-is:          SeamProducerSpec.hs
+  hs-source-dirs:   test
+  build-depends:
+      base,
+      bytestring,
+      binary,
+      containers,
+      directory,
+      filepath,
+      time,
+      unix,
+      aeson,
+      text,
+      cryptohash-sha256,
       port-matroid
   default-language: Haskell2010
 

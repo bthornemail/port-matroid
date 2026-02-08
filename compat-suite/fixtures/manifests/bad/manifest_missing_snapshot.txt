@@ -1,0 +1,4 @@
+gen=1
+wal=fixtures/wal/current.wal
+crc=0
+

@@ -1,0 +1,4 @@
+snapshot=fixtures/snapshots/one-entity.csnp
+wal=fixtures/wal/current.wal
+crc=0
+

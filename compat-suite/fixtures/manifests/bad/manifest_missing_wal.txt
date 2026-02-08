@@ -1,0 +1,4 @@
+gen=1
+snapshot=fixtures/snapshots/one-entity.csnp
+# wal key intentionally missing
+crc=0

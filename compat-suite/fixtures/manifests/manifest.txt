@@ -1,0 +1,4 @@
+# minimal manifest (crc omitted for backward compatibility)
+gen=1
+snapshot=fixtures/snapshots/one-entity.csnp
+wal=fixtures/wal/current.wal

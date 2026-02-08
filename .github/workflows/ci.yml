@@ -30,6 +30,8 @@ jobs:
         run: scripts/ci/build.sh
       - name: Unit tests
         run: scripts/ci/test.sh
+      - name: Compat suite
+        run: compat-suite/scripts/run.sh
       - name: Storage fuzz (fast)
         env:
           STORAGE_FUZZ_MAX: "200"

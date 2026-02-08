@@ -1,0 +1,5 @@
+gen=1
+snapshot=fixtures/snapshots/one-entity.csnp
+wal=fixtures/wal/current.wal
+evil=1
+

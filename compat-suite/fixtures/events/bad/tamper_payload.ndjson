@@ -1,0 +1,2 @@
+{"v":1,"seq":1,"time":"2026-01-24T00:00:00Z","type":"Utterance","actor":"founder","payload_b64":"Ik9yaWdpbmFsIg==","prev":"sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855","hash":"sha256:8a74f07dfbe54811c1941a304b49d84f8cdd8d33d7bbea15ae61d9e7448ecefd"}
+{"v":1,"seq":2,"time":"2026-01-24T00:01:00Z","type":"Utterance","actor":"attacker","payload_b64":"Ik1vZGlmaWVkIg==","prev":"sha256:8a74f07dfbe54811c1941a304b49d84f8cdd8d33d7bbea15ae61d9e7448ecefd","hash":"sha256:98fb7586f7da3e20614560ed87ce288b79136aab55647a0e6bcd22cde72ec244"}
