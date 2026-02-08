@@ -27,3 +27,8 @@ Compatibility suite for ULP constitutional invariants.
 - `fixtures/segments/bad/*.ndjson`: must-reject trace segments (anchor/chain/checkpoint mismatch)
 - `fixtures/manifests/*.txt`: must-accept manifests (CRC validates if present)
 - `fixtures/manifests/bad/*.txt`: must-reject manifests (unknown/missing keys or CRC mismatch)
+
+Segment fixtures may include a sidecar `*.meta.json` with:
+- `from_seq`, `from_hash` (required)
+- `require_start_checkpoint`, `require_end_checkpoint` (optional)
+- `max_bytes`, `max_events`, `max_line_len`, `max_payload_b64_len` (optional caps)

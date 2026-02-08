@@ -1,0 +1,8 @@
+{
+  "from_seq": 1,
+  "from_hash": "sha256:613648b47f0e303febc81494eec1634f9b314b2a6600ec621aa1c32378efd7b6",
+  "require_start_checkpoint": false,
+  "require_end_checkpoint": false,
+  "max_line_len": 200
+}
+

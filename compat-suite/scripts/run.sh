@@ -117,26 +117,39 @@ def canonical_bytes(ev: dict) -> bytes:
     prev_hash = b64_nopad(parse_hash(ev["prev"]))
     return b"".join([version, seq, time, etype, actor, payload_b64, prev_hash])
 
-def load_events(path: Path):
+def load_events(path: Path, caps: dict):
     required = {"v", "seq", "time", "type", "actor", "payload_b64", "prev", "hash"}
     out = []
     for idx, line in enumerate(path.read_text().splitlines(), start=1):
         if not line.strip():
             continue
+        if "max_line_len" in caps and len(line.encode("utf-8")) > int(caps["max_line_len"]):
+            raise ValueError(f"segment line too long {path}:{idx}")
         ev = json.loads(line)
         if not isinstance(ev, dict) or set(ev.keys()) != required:
             raise ValueError(f"event schema mismatch {path}:{idx}")
+        if "max_payload_b64_len" in caps and len(ev.get("payload_b64", "")) > int(caps["max_payload_b64_len"]):
+            raise ValueError(f"segment payload_b64 too long {path}:{idx}")
         want = ev["hash"]
         got = "sha256:" + hashlib.sha256(canonical_bytes(ev)).hexdigest()
         if want != got:
             raise ValueError(f"event hash mismatch {path}:{idx}: expected {want} got {got}")
         out.append(ev)
+        if "max_events" in caps and len(out) > int(caps["max_events"]):
+            raise ValueError(f"segment too many events {path}: max_events={caps['max_events']}")
     if not out:
         raise ValueError(f"empty segment: {path}")
     return out
 
 def validate_segment(path: Path, meta: dict):
-    evs = load_events(path)
+    # Caps are enforced before full validation where possible.
+    if "max_bytes" in meta:
+        sz = path.stat().st_size
+        if sz > int(meta["max_bytes"]):
+            raise ValueError(f"segment too large: bytes={sz} max_bytes={meta['max_bytes']}")
+
+    caps = {k: meta[k] for k in ("max_events", "max_line_len", "max_payload_b64_len") if k in meta}
+    evs = load_events(path, caps)
     from_seq = int(meta["from_seq"])
     from_hash = meta["from_hash"]
     if evs[0]["seq"] != from_seq + 1:
