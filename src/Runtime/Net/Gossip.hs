@@ -11,6 +11,7 @@ module Runtime.Net.Gossip
 
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
+import qualified Data.ByteString.Char8 as BSC
 import Data.Word (Word16, Word32, Word64)
 import Data.Bits (shiftL)
 
@@ -96,32 +97,32 @@ handlePullReq env me = \case
         snapPath <- currentSnapshotPath (geDataDir env)
         snapBytes <- BS.readFile snapPath
         if BS.length snapBytes > geMaxSnapBytes env
-          then pure (Left (Nack TooLarge "snapshot too large"))
+          then pure (Left (Nack TooLarge (BSC.pack "snapshot too large")))
           else pure (Right (MPullSnap (sGen me) (sSnapHash me) snapBytes))
       else do
         walPath <- currentWalPath (geDataDir env)
         h <- verifyWalHeader walPath
         case h of
-          Left _ -> pure (Left (Nack BadMsg "wal header invalid"))
+          Left _ -> pure (Left (Nack BadMsg (BSC.pack "wal header invalid")))
           Right () -> do
             walBytes <- BS.readFile walPath
             case walChunkFromOffset walBytes fromOff maxChunk of
               Left err -> pure (Left (Nack BadOffset (BS.pack (map (fromIntegral . fromEnum) err))))
               Right chunk ->
                 pure (Right (MPullWal (sGen me) (sSnapHash me) fromOff chunk))
-  _ -> pure (Left (Nack BadMsg "unexpected"))
+  _ -> pure (Left (Nack BadMsg (BSC.pack "unexpected")))
 
 applyPullSnap :: GossipEnv -> Msg -> IO (Either Nack ())
 applyPullSnap env = \case
   MPullSnap gen snapHash bytes -> do
     if BS.length bytes > geMaxSnapBytes env
-      then pure (Left (Nack TooLarge "snapshot too large"))
+      then pure (Left (Nack TooLarge (BSC.pack "snapshot too large")))
       else case decodeSnapshot bytes of
-        Left _ -> pure (Left (Nack BadMsg "snapshot decode failed"))
+        Left _ -> pure (Left (Nack BadMsg (BSC.pack "snapshot decode failed")))
         Right _ -> do
           let actualHash = if BS.length bytes >= 32 then BS.drop (BS.length bytes - 32) bytes else BS.empty
           if actualHash /= snapHash
-            then pure (Left (Nack HashMismatch "snapshot hash mismatch"))
+            then pure (Left (Nack HashMismatch (BSC.pack "snapshot hash mismatch")))
             else do
               let snapDir = geDataDir env </> "snapshots"
               let walDir = geDataDir env </> "wal"
@@ -133,7 +134,7 @@ applyPullSnap env = \case
               _ <- ensureWalHeader walFile
               _ <- writeManifest (geDataDir env) (Manifest (fromIntegral gen) snapFile walFile)
               pure (Right ())
-  _ -> pure (Left (Nack BadMsg "unexpected"))
+  _ -> pure (Left (Nack BadMsg (BSC.pack "unexpected")))
 
 applyPullWal :: GossipEnv -> Msg -> IO (Either Nack ())
 applyPullWal env = \case
@@ -142,17 +143,17 @@ applyPullWal env = \case
     snapBytes <- BS.readFile snapPath
     let actualHash = if BS.length snapBytes >= 32 then BS.drop (BS.length snapBytes - 32) snapBytes else BS.empty
     if snapHash /= actualHash
-      then pure (Left (Nack HashMismatch "base snapshot hash mismatch"))
+      then pure (Left (Nack HashMismatch (BSC.pack "base snapshot hash mismatch")))
       else do
         walPath <- currentWalPath (geDataDir env)
         h <- verifyWalHeader walPath
         case h of
-          Left _ -> pure (Left (Nack BadMsg "wal header invalid"))
+          Left _ -> pure (Left (Nack BadMsg (BSC.pack "wal header invalid")))
           Right () -> do
             walBytes <- BS.readFile walPath
             let currentSize = fromIntegral (BS.length walBytes)
             if offset /= currentSize
-              then pure (Left (Nack BadOffset "offset not at end"))
+              then pure (Left (Nack BadOffset (BSC.pack "offset not at end")))
               else do
                 -- validate chunk entries strictly before appending
                 case parseWalChunk bytes of
@@ -162,13 +163,13 @@ applyPullWal env = \case
                     -- replay to ensure correctness; fail closed on error
                     snapRes <- loadSnapshot (geDataDir env)
                     case snapRes of
-                      Left _ -> pure (Left (Nack BadMsg "snapshot load failed"))
+                      Left _ -> pure (Left (Nack BadMsg (BSC.pack "snapshot load failed")))
                       Right snap -> do
                         r <- replayWalWith False (geDataDir env) snap
                         case r of
-                          Left _ -> pure (Left (Nack BadMsg "wal replay failed"))
+                          Left _ -> pure (Left (Nack BadMsg (BSC.pack "wal replay failed")))
                           Right _ -> pure (Right ())
-  _ -> pure (Left (Nack BadMsg "unexpected"))
+  _ -> pure (Left (Nack BadMsg (BSC.pack "unexpected")))
 
 -- ----------------------------
 -- Helpers

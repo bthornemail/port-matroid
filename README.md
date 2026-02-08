@@ -96,3 +96,4 @@ Architecture reference:
 - `dev-docs/SCHEDULER-NETWORK.md`
 - `dev-docs/NETWORK-CONVERGENCE.md`
 - `dev-docs/STORAGE-FORMAT.md`
+- `dev-docs/SEAM-CONTRACT.md`

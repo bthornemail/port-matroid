@@ -16,7 +16,7 @@ logMsg cfg level msg =
       let t = formatTime defaultTimeLocale "%Y-%m-%dT%H:%M:%SZ" ts
       case cfgLogFormat cfg of
         LogText -> putStrLn (t ++ " " ++ show level ++ " " ++ msg)
-        LogJson -> putStrLn ("{\"ts\":\"" ++ t ++ "\",\"level\":\"" ++ map toLowerStr (show level) ++ "\",\"msg\":\"" ++ escape msg ++ "\"}")
+        LogJson -> putStrLn ("{\"ts\":\"" ++ t ++ "\",\"level\":\"" ++ toLowerStr (show level) ++ "\",\"msg\":\"" ++ escape msg ++ "\"}")
   where
     toLowerStr = map toLower
     toLower c

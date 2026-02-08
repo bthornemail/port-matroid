@@ -1,5 +1,6 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE RecordWildCards #-}
 
 module Runtime.Net.Gossip.Types
   ( NodeId(..)
@@ -14,6 +15,7 @@ module Runtime.Net.Gossip.Types
 import Data.Binary.Get
 import Data.Binary.Put
 import Data.ByteString (ByteString)
+import qualified Data.ByteString.Char8 as BSC
 import qualified Data.ByteString.Lazy as BL
 import Data.Word (Word16, Word32, Word64, Word8)
 import GHC.Generics (Generic)
@@ -78,7 +80,7 @@ tagNack = 0x7F
 putHash32 :: ByteString -> Put
 putHash32 h =
   if BL.length (BL.fromStrict h) /= 32
-    then fail "hash32 length"
+    then error "hash32 length"
     else putByteString h
 
 getHash32 :: Get ByteString
@@ -181,4 +183,4 @@ decodeMsg bs =
           c <- getNackCode
           rest <- getRemainingLazyByteString
           pure $ MNack (Nack c (BL.toStrict rest))
-        _ -> pure $ MNack (Nack BadMsg "unknown tag")
+        _ -> pure $ MNack (Nack BadMsg (BSC.pack "unknown tag"))

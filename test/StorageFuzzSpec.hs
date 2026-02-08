@@ -21,11 +21,12 @@ import System.FilePath ((</>))
 import System.IO.Unsafe (unsafePerformIO)
 import System.Posix.Process (getProcessID)
 import System.Environment (lookupEnv)
+import Text.Read (readMaybe)
 import Test.QuickCheck
 import Test.QuickCheck.Monadic (monadicIO, run, assert)
 
 import Snapshot.Types (Snapshot(..), Hash(..))
-import Snapshot.Universe.Types (Instruction(..), Opcode(..), AuthorityMask(..))
+import Snapshot.Universe.Types (Instruction(..), Opcode(..), AuthorityMask(..), Result(..))
 import Snapshot.Universe.Core (encodeStream, decodeStream, applyInstructions, opcodeNOP, opcodeAdvanceTick)
 import Runtime.Store
   ( rotateSnapshotAndWal

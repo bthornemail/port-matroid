@@ -1,3 +1,5 @@
+{-# LANGUAGE ScopedTypeVariables #-}
+
 module Runtime.Store
   ( loadSnapshot
   , writeSnapshot
@@ -18,6 +20,7 @@ module Runtime.Store
   , walEntryCount
   , ensureWalHeader
   , verifyWalHeader
+  , walHeader
   , walVersion
   , replayWalWith
   , crc32
@@ -40,12 +43,14 @@ import Control.Exception (try, SomeException, bracket)
 import System.IO.Error (catchIOError)
 import Data.Char (isSpace)
 import System.IO (withBinaryFile, IOMode(ReadMode))
-import System.Posix.IO (openFd, defaultFileFlags, OpenMode(..), closeFd, fsync)
+import System.Posix.IO (openFd, defaultFileFlags, OpenMode(..), closeFd)
 import System.Posix.Process (getProcessID)
+import System.Posix.Types (Fd(..))
+import Foreign.C.Types (CInt(..))
 import Data.Bits (xor, (.&.), shiftR, (.|.), shiftL)
 import qualified Data.List as List
 import Text.Read (readMaybe)
-import Data.Word (Word16)
+import Data.Word (Word16, Word32)
 
 snapshotPath :: FilePath -> FilePath
 snapshotPath dir = dir </> "snapshots" </> "latest.csnp"
@@ -282,11 +287,18 @@ atomicWriteFile final bytes = do
 
 fsyncPath :: FilePath -> IO ()
 fsyncPath path =
-  bracket (openFd path ReadWrite Nothing defaultFileFlags) closeFd fsync
+  bracket (openFd path ReadWrite Nothing defaultFileFlags) closeFd fsyncFd
 
 fsyncDir :: FilePath -> IO ()
 fsyncDir dir =
-  bracket (openFd dir ReadOnly Nothing defaultFileFlags) closeFd fsync
+  bracket (openFd dir ReadOnly Nothing defaultFileFlags) closeFd fsyncFd
+
+foreign import ccall unsafe "fsync" c_fsync :: CInt -> IO CInt
+
+fsyncFd :: Fd -> IO ()
+fsyncFd (Fd fd) = do
+  _ <- c_fsync fd
+  pure ()
 
 writeBlobAtomic :: FilePath -> BS.ByteString -> IO (Either String ())
 writeBlobAtomic = atomicWriteFile
