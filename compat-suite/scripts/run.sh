@@ -184,6 +184,13 @@ if seg_accept.exists():
         validate_segment(seg, meta_for(seg))
         print(f"ok segment window {seg}")
 
+seg_fork = seg_root / "fork"
+if seg_fork.exists():
+    for seg in sorted(seg_fork.glob("*.ndjson")):
+        # Fork fixtures are must-accept segments by themselves.
+        validate_segment(seg, meta_for(seg))
+        print(f"ok fork segment {seg}")
+
 if seg_bad.exists():
     for seg in sorted(seg_bad.glob("*.ndjson")):
         try:

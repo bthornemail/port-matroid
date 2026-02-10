@@ -1,0 +1,7 @@
+{
+  "from_seq": 2,
+  "from_hash": "sha256:62b0cc0a5ff34b11055036fa16ad36fe4a26c77c763cf802282833486d60a08c",
+  "require_start_checkpoint": false,
+  "require_end_checkpoint": true
+}
+
