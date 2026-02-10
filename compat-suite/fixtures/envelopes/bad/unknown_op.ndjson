@@ -1,0 +1,1 @@
+{"authority":{"basis":[],"kind":"direct"},"meta":{"epoch":1,"gen":1,"writer":"fixture"},"namespace":"ulp.trace.fixture.v0","payload":{"eid":1,"key":"fixture__x","op":"set_component_number","value":1}}

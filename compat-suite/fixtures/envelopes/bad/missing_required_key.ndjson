@@ -1,0 +1,1 @@
+{"authority":{"basis":[],"kind":"direct"},"meta":{"epoch":1,"writer":"fixture"},"namespace":"ulp.trace.fixture.v0","payload":{"eid":1,"etype":"trace","op":"create_entity","owner_mask":15}}

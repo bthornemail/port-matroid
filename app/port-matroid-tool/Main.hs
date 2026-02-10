@@ -19,13 +19,16 @@ import qualified Data.Aeson.Key as K
 import qualified Data.Aeson.KeyMap as KM
 import qualified Data.List as List
 import qualified Data.Map.Strict as Map
+import qualified Data.Set as Set
 import Data.Binary.Put (runPut, putInt64le, putWord32le, putWord64le, putWord8, putByteString)
 import Data.Int (Int64)
 import Data.Word (Word64)
 import System.Environment (getArgs)
 import System.Exit (exitFailure)
 import System.FilePath (takeExtension)
-import System.Directory (createDirectoryIfMissing)
+import System.FilePath ((</>))
+import System.Directory (createDirectoryIfMissing, doesFileExist)
+import Text.Read (readMaybe)
 
 import Snapshot.Types (Snapshot(..), Hash(..))
 import qualified Snapshot.Types as ST
@@ -48,6 +51,11 @@ main = do
     ["validate", path] -> validate path
     ["audit", dir] -> audit dir
     ["append-envelope", dir, ndjson] -> appendEnvelope dir ndjson
+    ["verify-envelope-digest-index", dir] -> verifyEnvelopeDigestIndex dir
+    ["verify-envelope-digest-prefix", dir, nStr] -> verifyEnvelopeDigestPrefix dir nStr
+    ["rebuild-envelope-digest-index", dir] -> rebuildEnvelopeDigestIndex dir
+    ["provenance-index", dir, out] -> writeProvenanceIndex dir out
+    ["verify-provenance-index", dir, out] -> verifyProvenanceIndex dir out
     ["export-snapshot-json", path] -> exportSnapshotJson path
     ["replay-hash", dir] -> replayHash dir
     _ -> usage >> exitFailure
@@ -75,7 +83,18 @@ validate path = do
     _ -> die "unknown extension"
 
 usage :: IO ()
-usage = putStrLn "usage: port-matroid-tool validate <file> | audit <data-dir> | append-envelope <data-dir> <events.ndjson> | export-snapshot-json <file.csnp> | replay-hash <data-dir>"
+usage =
+  putStrLn $
+    "usage: port-matroid-tool validate <file>\n"
+      ++ "  | audit <data-dir>\n"
+      ++ "  | append-envelope <data-dir> <events.ndjson>\n"
+      ++ "  | verify-envelope-digest-index <data-dir>\n"
+      ++ "  | verify-envelope-digest-prefix <data-dir> <n-lines>\n"
+      ++ "  | rebuild-envelope-digest-index <data-dir>\n"
+      ++ "  | provenance-index <data-dir> <out.tsv>\n"
+      ++ "  | verify-provenance-index <data-dir> <out.tsv>\n"
+      ++ "  | export-snapshot-json <file.csnp>\n"
+      ++ "  | replay-hash <data-dir>"
 
 die :: String -> IO a
 die msg = putStrLn msg >> exitFailure
@@ -175,7 +194,21 @@ appendEnvelope dir ndjson = do
         Left e -> die ("init store failed: " ++ e)
         Right () -> pure ()
   bytes <- BS.readFile ndjson
+  let bytesNl =
+        if BS.null bytes
+          then bytes
+          else if BS.last bytes == 10 then bytes else BS.snoc bytes 10
   let ls = filter (not . BL.null) (BL.split 10 (BL.fromStrict bytes))
+  -- Envelope-level dedupe: reject re-appending identical envelope lines.
+  -- Digest meaning: sha256(raw_line_bytes_without_newline) hex.
+  let digests = map (toHex . SHA.hash . BL.toStrict) ls
+  existing <- loadEnvelopeDigestIndex dir
+  -- We intentionally do NOT reject duplicates within the same append call:
+  -- identical envelopes can be semantically meaningful as repeated occurrences.
+  -- The safety property we enforce is idempotence across appends to the same store.
+  case firstAlreadyAppended existing digests of
+    Just d -> die ("duplicate envelope digest (already appended): " ++ T.unpack (TE.decodeUtf8 d))
+    Nothing -> pure ()
   let instrEs = map decodeEnvelopeLine ls
   instrs <- case sequence instrEs of
     Left e -> die e
@@ -186,7 +219,11 @@ appendEnvelope dir ndjson = do
       r <- Runtime.Store.appendWal dir stream
       case r of
         Left e -> die ("append wal failed: " ++ e)
-        Right () -> putStrLn "ok"
+        Right () -> do
+          persistEnvelopeDigestIndex dir digests
+          -- Persist the raw envelope bytes for audit/debug and for digest-index rebuild.
+          persistEnvelopeLog dir bytesNl
+          putStrLn "ok"
 
 emptySnapshot :: Snapshot
 emptySnapshot = Snapshot 0 [] (Hash (BS.replicate 32 0))
@@ -202,14 +239,15 @@ parseEnvelope = A.withObject "EventEnvelope" $ \o -> do
   let keys = keyList o
   let required = List.sort ["namespace", "authority", "meta", "payload"]
   if keys /= required then fail "envelope schema mismatch (unexpected/missing keys)" else pure ()
-  _ns <- o A..: "namespace" :: AT.Parser T.Text
+  ns <- o A..: "namespace" :: AT.Parser T.Text
+  producer <- parseNamespaceProducer ns
   auth <- o A..: "authority" :: AT.Parser A.Value
   kind <- parseAuthority auth
   if kind /= "direct" then fail "authority.kind must be direct for Producer" else pure ()
   metaV <- o A..: "meta" :: AT.Parser A.Value
   _ <- parseMeta metaV
   payload <- o A..: "payload" :: AT.Parser A.Value
-  parsePayload payload
+  parsePayload producer payload
 
 keyList :: A.Object -> [T.Text]
 keyList o = List.sort (map K.toText (KM.keys o))
@@ -230,8 +268,8 @@ parseMeta = A.withObject "EnvelopeMeta" $ \m -> do
   _ <- (m A..: "gen" :: AT.Parser Word64)
   pure ()
 
-parsePayload :: A.Value -> AT.Parser Instruction
-parsePayload = A.withObject "payload" $ \p -> do
+parsePayload :: T.Text -> A.Value -> AT.Parser Instruction
+parsePayload producer = A.withObject "payload" $ \p -> do
   op <- p A..: "op" :: AT.Parser T.Text
   case op of
     "advance_tick" -> do
@@ -255,6 +293,7 @@ parsePayload = A.withObject "payload" $ \p -> do
       requireKeys p ["op","eid","key","value"]
       eid <- p A..: "eid" :: AT.Parser Int64
       key <- p A..: "key" :: AT.Parser T.Text
+      requireComponentPrefix producer key
       val <- p A..: "value" :: AT.Parser T.Text
       let keyBytes = TE.encodeUtf8 key
       let valBytes = TE.encodeUtf8 val
@@ -270,6 +309,7 @@ parsePayload = A.withObject "payload" $ \p -> do
       requireKeys p ["op","eid","key"]
       eid <- p A..: "eid" :: AT.Parser Int64
       key <- p A..: "key" :: AT.Parser T.Text
+      requireComponentPrefix producer key
       let keyBytes = TE.encodeUtf8 key
       let payloadBytes = BL.toStrict $ runPut $ do
             putInt64le eid
@@ -283,10 +323,243 @@ parsePayload = A.withObject "payload" $ \p -> do
       pure (Instruction opcodeDeleteEntity 0 payloadBytes)
     _ -> fail "unknown op"
 
+-- Namespace format: ulp.trace.<producer>.<rest>.vN
+parseNamespaceProducer :: T.Text -> AT.Parser T.Text
+parseNamespaceProducer ns =
+  case T.splitOn "." ns of
+    ("ulp":"trace":producer:rest) ->
+      case reverse rest of
+        (v:_) | T.isPrefixOf "v" v && T.length v >= 2 -> pure producer
+        _ -> fail "namespace invalid"
+    _ -> fail "namespace invalid"
+
+requireComponentPrefix :: T.Text -> T.Text -> AT.Parser ()
+requireComponentPrefix producer key = do
+  let prefix = producer <> "__"
+  if prefix `T.isPrefixOf` key
+    then pure ()
+    else fail "component key missing/wrong producer prefix"
+
 requireKeys :: A.Object -> [T.Text] -> AT.Parser ()
 requireKeys o requiredList = do
   let required = List.sort requiredList
   if keyList o /= required then fail "payload schema mismatch" else pure ()
+
+-- Envelope digest index helpers
+digestIndexPath :: FilePath -> FilePath
+digestIndexPath dir = dir </> "envelope-digests.sha256"
+
+envelopeLogPath :: FilePath -> FilePath
+envelopeLogPath dir = dir </> "envelopes.ndjson"
+
+loadEnvelopeDigestIndex :: FilePath -> IO (Set.Set BS.ByteString)
+loadEnvelopeDigestIndex dir = do
+  let p = digestIndexPath dir
+  ex <- doesFileExist p
+  if not ex
+    then pure Set.empty
+    else do
+      content <- BS.readFile p
+      let ds = filter (not . BS.null) (BS.split 10 content)
+      pure (Set.fromList ds)
+
+persistEnvelopeDigestIndex :: FilePath -> [BS.ByteString] -> IO ()
+persistEnvelopeDigestIndex dir ds = do
+  let p = digestIndexPath dir
+  let nl = BS.singleton 10
+  let bytes = BS.concat (map (<> nl) ds)
+  BS.appendFile p bytes
+
+persistEnvelopeLog :: FilePath -> BS.ByteString -> IO ()
+persistEnvelopeLog dir bytes = do
+  let p = envelopeLogPath dir
+  BS.appendFile p bytes
+
+firstAlreadyAppended :: Set.Set BS.ByteString -> [BS.ByteString] -> Maybe BS.ByteString
+firstAlreadyAppended existing = go
+  where
+    go [] = Nothing
+    go (d:ds) = if Set.member d existing then Just d else go ds
+
+verifyEnvelopeDigestIndex :: FilePath -> IO ()
+verifyEnvelopeDigestIndex dir = do
+  let idxP = digestIndexPath dir
+  let logP = envelopeLogPath dir
+  exIdx <- doesFileExist idxP
+  exLog <- doesFileExist logP
+  if not exIdx
+    then die "digest index missing (envelope-digests.sha256)"
+    else pure ()
+  if not exLog
+    then die "envelope log missing (envelopes.ndjson); cannot verify/rebuild index"
+    else pure ()
+  idx <- BS.readFile idxP
+  logB <- BS.readFile logP
+  let idxDs = filter (not . BS.null) (BS.split 10 idx)
+  let logLs = filter (not . BL.null) (BL.split 10 (BL.fromStrict logB))
+  let want = map (toHex . SHA.hash . BL.toStrict) logLs
+  if length idxDs /= length want
+    then die ("digest index count mismatch: index=" ++ show (length idxDs) ++ " envelopes=" ++ show (length want))
+    else
+      case firstMismatch 1 idxDs want of
+        Just (n, got, w) ->
+          die
+            ( "digest index mismatch at line "
+                ++ show n
+                ++ ": index="
+                ++ T.unpack (TE.decodeUtf8 got)
+                ++ " envelopes="
+                ++ T.unpack (TE.decodeUtf8 w)
+            )
+        Nothing -> putStrLn ("ok digest index (" ++ show (length want) ++ " envelopes)")
+
+verifyEnvelopeDigestPrefix :: FilePath -> String -> IO ()
+verifyEnvelopeDigestPrefix dir nStr =
+  case readMaybe nStr :: Maybe Int of
+    Nothing -> die "n-lines must be an integer"
+    Just n | n < 0 -> die "n-lines must be >= 0"
+    Just n -> do
+      let idxP = digestIndexPath dir
+      let logP = envelopeLogPath dir
+      exIdx <- doesFileExist idxP
+      exLog <- doesFileExist logP
+      if not exIdx
+        then die "digest index missing (envelope-digests.sha256)"
+        else pure ()
+      if not exLog
+        then die "envelope log missing (envelopes.ndjson); cannot verify prefix"
+        else pure ()
+      idx <- BS.readFile idxP
+      logB <- BS.readFile logP
+      let idxDs0 = filter (not . BS.null) (BS.split 10 idx)
+      let logLs0 = filter (not . BL.null) (BL.split 10 (BL.fromStrict logB))
+      let want0 = map (toHex . SHA.hash . BL.toStrict) logLs0
+      let n' = min n (min (length idxDs0) (length want0))
+      let idxDs = take n' idxDs0
+      let want = take n' want0
+      case firstMismatch 1 idxDs want of
+        Just (ln, got, w) ->
+          die
+            ( "digest index prefix mismatch at line "
+                ++ show ln
+                ++ ": index="
+                ++ T.unpack (TE.decodeUtf8 got)
+                ++ " envelopes="
+                ++ T.unpack (TE.decodeUtf8 w)
+            )
+        Nothing -> putStrLn ("ok digest index prefix (" ++ show n' ++ " envelopes)")
+
+rebuildEnvelopeDigestIndex :: FilePath -> IO ()
+rebuildEnvelopeDigestIndex dir = do
+  let logP = envelopeLogPath dir
+  exLog <- doesFileExist logP
+  if not exLog
+    then die "envelope log missing (envelopes.ndjson); cannot rebuild index"
+    else pure ()
+  logB <- BS.readFile logP
+  let logLs = filter (not . BL.null) (BL.split 10 (BL.fromStrict logB))
+  let ds = map (toHex . SHA.hash . BL.toStrict) logLs
+  let p = digestIndexPath dir
+  let nl = BS.singleton 10
+  BS.writeFile p (BS.concat (map (<> nl) ds))
+  putStrLn ("ok rebuilt digest index (" ++ show (length ds) ++ " envelopes)")
+
+writeProvenanceIndex :: FilePath -> FilePath -> IO ()
+writeProvenanceIndex dir out = do
+  let logP = envelopeLogPath dir
+  exLog <- doesFileExist logP
+  if not exLog
+    then die "envelope log missing (envelopes.ndjson); cannot build provenance index"
+    else pure ()
+  logB <- BS.readFile logP
+  let logLs = filter (not . BL.null) (BL.split 10 (BL.fromStrict logB))
+  let rows = zip [1 :: Int ..] logLs
+  let header = BS.intercalate (BS.singleton 9) ["line", "envelope_digest", "namespace", "writer", "epoch", "gen", "op", "key"] <> BS.singleton 10
+  let outLines = map provenanceRow rows
+  BS.writeFile out (BS.concat (header : outLines))
+  putStrLn "ok provenance index"
+
+verifyProvenanceIndex :: FilePath -> FilePath -> IO ()
+verifyProvenanceIndex dir out = do
+  ex <- doesFileExist out
+  if not ex then die "provenance index file missing" else pure ()
+  existing <- BS.readFile out
+  -- Recompute expected and compare bytes exactly (deterministic contract).
+  let logP = envelopeLogPath dir
+  exLog <- doesFileExist logP
+  if not exLog
+    then die "envelope log missing (envelopes.ndjson); cannot verify provenance index"
+    else pure ()
+  logB <- BS.readFile logP
+  let logLs = filter (not . BL.null) (BL.split 10 (BL.fromStrict logB))
+  let rows = zip [1 :: Int ..] logLs
+  let header = BS.intercalate (BS.singleton 9) ["line", "envelope_digest", "namespace", "writer", "epoch", "gen", "op", "key"] <> BS.singleton 10
+  let expected = BS.concat (header : map provenanceRow rows)
+  if existing /= expected
+    then die "provenance index mismatch (file differs from recomputed)"
+    else putStrLn "ok provenance index"
+
+provenanceRow :: (Int, BL.ByteString) -> BS.ByteString
+provenanceRow (ln, line) =
+  case A.eitherDecode line of
+    Left _err -> pack (show ln ++ "\t<decode_error>\t\t\t\t\t\t\n")
+    Right v ->
+      case AT.parseEither parseEnvelopeInfo v of
+        Left err -> pack (show ln ++ "\t<parse_error:" ++ err ++ ">\t\t\t\t\t\t\n")
+        Right (ns, writer, epoch, gen, op, mKey) ->
+          let digest = toHex (SHA.hash (BL.toStrict line))
+              fields =
+                [ pack (show ln)
+                , digest
+                , TE.encodeUtf8 ns
+                , TE.encodeUtf8 writer
+                , pack (show epoch)
+                , pack (show gen)
+                , TE.encodeUtf8 op
+                , maybe "" TE.encodeUtf8 mKey
+                ]
+          in BS.intercalate (BS.singleton 9) fields <> BS.singleton 10
+
+parseEnvelopeInfo :: A.Value -> AT.Parser (T.Text, T.Text, Word64, Word64, T.Text, Maybe T.Text)
+parseEnvelopeInfo = A.withObject "EventEnvelope" $ \o -> do
+  -- Reuse the same fail-closed envelope schema here too.
+  let keys = keyList o
+  let required = List.sort ["namespace", "authority", "meta", "payload"]
+  if keys /= required then fail "envelope schema mismatch" else pure ()
+  ns <- o A..: "namespace" :: AT.Parser T.Text
+  _auth <- o A..: "authority" :: AT.Parser A.Value
+  metaV <- o A..: "meta" :: AT.Parser A.Value
+  (writer, epoch, gen) <- parseMetaInfo metaV
+  payload <- o A..: "payload" :: AT.Parser A.Value
+  (op, mKey) <- parsePayloadInfo payload
+  pure (ns, writer, epoch, gen, op, mKey)
+
+parseMetaInfo :: A.Value -> AT.Parser (T.Text, Word64, Word64)
+parseMetaInfo = A.withObject "EnvelopeMeta" $ \m -> do
+  let required = List.sort ["writer", "epoch", "gen"]
+  if keyList m /= required then fail "meta schema mismatch" else pure ()
+  w <- (m A..: "writer" :: AT.Parser T.Text)
+  e <- (m A..: "epoch" :: AT.Parser Word64)
+  g <- (m A..: "gen" :: AT.Parser Word64)
+  pure (w, e, g)
+
+parsePayloadInfo :: A.Value -> AT.Parser (T.Text, Maybe T.Text)
+parsePayloadInfo = A.withObject "payload" $ \p -> do
+  op <- p A..: "op" :: AT.Parser T.Text
+  case op of
+    "set_component_string" -> do
+      key <- p A..: "key" :: AT.Parser T.Text
+      pure (op, Just key)
+    "remove_component" -> do
+      key <- p A..: "key" :: AT.Parser T.Text
+      pure (op, Just key)
+    _ -> pure (op, Nothing)
+
+firstMismatch :: Int -> [BS.ByteString] -> [BS.ByteString] -> Maybe (Int, BS.ByteString, BS.ByteString)
+firstMismatch _ [] [] = Nothing
+firstMismatch n (a:as) (b:bs) =
+  if a == b then firstMismatch (n + 1) as bs else Just (n, a, b)
+firstMismatch _ _ _ = Just (0, "", "")
 
 audit :: FilePath -> IO ()
 audit dir = do

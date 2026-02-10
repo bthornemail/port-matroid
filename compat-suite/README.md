@@ -32,3 +32,7 @@ Segment fixtures may include a sidecar `*.meta.json` with:
 - `from_seq`, `from_hash` (required)
 - `require_start_checkpoint`, `require_end_checkpoint` (optional)
 - `max_bytes`, `max_events`, `max_line_len`, `max_payload_b64_len` (optional caps)
+
+Fork selection fixtures live in `fixtures/segments/fork/selections/`:
+- `accept/*.selection.json`: must-accept selection records (schema exact, digest matches segment bytes)
+- `bad/*.selection.json`: must-reject selection records (digest/terminal/schema mismatch)
